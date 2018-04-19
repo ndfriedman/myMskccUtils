@@ -98,7 +98,7 @@ def amalgamate_all_dfs(dfTuples, masterIdColumnName, mode='return'):
 #simple df amalgamation
 #if mode = return returns the df, if mode equals write, writes the df
 #note breaks if ID columns dont match (reuqires client to fix id columns beforehand) 
-def amalgamate_dfs_same_col(dfs, idColName, writePath, mode='return'):
+def amalgamate_dfs_same_col(dfs, idColName, writePath=None, mode='return'):
 	finalDf = dfs[0]
 	for df in dfs[1:]:
 		finalDf = finalDf.merge(df, how='left', left_on=idColName, right_on=idColName)
@@ -127,6 +127,35 @@ def parse_data_format_cases_on_line_one(dataPath, write=False):
 		df_final.to_csv('dataCNAReshaped.tsv', index=False, sep='\t')
 	return df_final
 
+#parses maf mutation data into a matrix of tumors mapped to whether genes are mutated or not
+#considerPathogenicity: consider features of the mutations (missense silent etc)
+#if countNMutationsPerGene write counts of mutations to columns, otherwise write boolean there/not there
+#write: write the output to a file
+def parse_mut_data_into_gene_matrix(dataPath, countNMutationsPerGene=False, considerPathogenicity=False, write=False):
+	df = pd.read_table(dataPath, skiprows=[0])
+	print df
+	l = list(df['Tumor_Sample_Barcode'])
+	d = {}
+	for index, row in df.iterrows():
+		barcode = row['Tumor_Sample_Barcode']
+		if barcode in d:
+			curVal = d[barcode]
+			curVal.append(row['Hugo_Symbol'])
+			d[barcode] = curVal
+		else:
+			d[barcode] = [row['Hugo_Symbol']]
+	l = [] #create a list of dictionaries so we can force this into a dataframe
+	for key, val in d.items():
+		if countNMutationsPerGene: val = set(val)
+		counts = Counter(val)
+		d = dict(counts)
+		d['Tumor_Sample_Barcode'] = key
+		l.append(d)
+	df = pd.DataFrame(l)
+	df = df.fillna(value=0)
+	if write:
+		df.to_csv('mutationDataGenesAsCols.tsv', index=False, sep='\t')
+	return df
 
 
 
