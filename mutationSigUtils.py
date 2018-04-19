@@ -4,11 +4,11 @@ import sys
 import os
 import subprocess
 import pandas as pd
-
+import argparse
 
 
 #run code to get mutational signatures
-def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, tMaf=None):
+def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, triuncOnly=False, tMaf=None):
 	def run_triunc_command(scriptDir, sMaf, tMaf):
 		triuncScriptPath = os.path.join(scriptDir, 'make_trinuc_maf.py')
 		cmd = 'python {sPath} {sourceMafPath} {TargetMafPath}'.format(sPath = triuncScriptPath, sourceMafPath = sMaf, TargetMafPath = tMaf)
@@ -31,6 +31,9 @@ def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, tMaf=None):
 	if 'triunc' in sMaf: triuncMaf = sMaf
 	else:
 		triuncMaf = run_triunc_command(scriptDir, sMaf, tMaf)
+		if triuncOnly:
+			print 'triunc only mode, returning'
+			return
 	print triuncMaf
 	print 'RUMi'
 	targetSignaturesFile = outputFilePath
@@ -107,6 +110,25 @@ def sanity_check_mutation_counts(signaturesFilePath):
 	perform_sanity_check_on_dict(sanityCheckDict)
 
 
+def main():
+
+	parser = argparse.ArgumentParser(description='Noahs script!')
+	parser.add_argument('--inputMaf', help='maf to run signatures/triunc on', default='/ifs/work/taylorlab/friedman/clinicalData/msk-impact/msk-impact/data_mutations_extended.txt')
+	parser.add_argument('--outputDir', help='output directory', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles')
+	parser.add_argument('--outputFilename', help='output filename', default=None)
+	parser.add_argument('--mutationalSignaturesScriptPath', help='path to the mutational signatures script', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures')
+	parser.add_argument('--triuncOnly', help='mode for whether we just generate the triunc only file', default=False)
+
+	args = parser.parse_args()
+
+	args.triuncOnly = True
+	args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
+	run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=args.triuncOnly)
+
+
+
+if __name__ == '__main__':
+    main()
 
 
 
