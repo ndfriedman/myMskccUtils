@@ -3,6 +3,15 @@ import os
 from collections import Counter
 import pandas as pd
 
+#reads in a caselist file and returns a set of case ids (tumor sample barcodes)
+def read_in_case_list(filename):
+	l = []
+	with open(filename) as f:
+		lines = f.readlines()
+		for line in lines:
+			l.append(line.strip('\n'))
+	return set(l)
+
 #fixes the df to make the tumor sample barcode the patient id
 def extract_patient_name(df, patientNameColumn='Tumor_Sample_Barcode'):
 	df[patientNameColumn] = df[patientNameColumn].apply(lambda x: x[:9])
@@ -61,9 +70,25 @@ def expand_col(df, col):
 	df = assign_cols(df, cols, col)
 	return df
 
+##################COLUMN creation
+
 #creates a PATIENT ID col for the df by doing reasoning on the tumor sample barcode col
 def create_patient_id_col(df):
 	df['PATIENT_ID'] = df['Tumor_Sample_Barcode'].apply(lambda x: x[:9])
+	return df
+
+def create_expected_mut_copies_col(df):
+	df['VAF'] = df['t_alt_count'] / (df['t_alt_count'] + df['t_ref_count']) 
+	df['expectedMutCopies'] = (df['VAF'] * (2*(1 - df['purity']) + df['purity'] * df['tcn']))/df['purity']
+	df['preGenomeDoubling'] = df['expectedMutCopies'].apply(lambda x: 1 if x > 1.5 else 0)
+	return df
+
+#a function that takes the cna cols we have and changes them into a formate amenable to analysis
+def normalize_and_create_cna_summary_cols(df, cnaCols):
+	for cnaCol in cnaCols:
+		df[cnaCol] = df[cnaCol].apply(lambda x: 1 if x <= -1.5 or x > 1.5 else 0)
+	dfCNAOnly = df[cnaCols]
+	df['Total_N_CNA_Changes'] = dfCNAOnly.sum(axis=1)
 	return df
 
 #master function that merges all dfs (NOTE ALERT IT DOES NOT WORK well for multiple samples, it aribtrarily drops them)
@@ -156,6 +181,15 @@ def parse_mut_data_into_gene_matrix(dataPath, countNMutationsPerGene=False, cons
 	if write:
 		df.to_csv('mutationDataGenesAsCols.tsv', index=False, sep='\t')
 	return df
+
+#based on a conditional, takes a df and writes a smaller permutation of it to help with faster computation
+def reduce_and_write_df():
+	return 0
+
+
+
+
+
 
 
 
