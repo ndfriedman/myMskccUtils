@@ -8,6 +8,35 @@ import numpy as np
 
 import scipy.stats
 
+from lifelines import KaplanMeierFitter
+from lifelines.statistics import logrank_test
+
+#KAPLAN MEIER ANALYSIS
+
+def test_significance(df1, df2):
+	results = logrank_test(df1['os_years'], df2['os_years'], df1['CENSOR'], df2['CENSOR'], alpha=.99)
+	return results.p_value
+	#results.print_summary()
+
+def make_kaplan_meier_plots(dfs):
+	def correct_censorship(dfs): #creates a sensorship column which invertys the pt vital status colum (0 is alive, 1 is dead)
+		for i in range(len(dfs)):
+			df = dfs[i]
+			df['CENSOR'] = df['PT_VITAL_STATUS'].apply(lambda x: 1 if x == 0 else 0)
+			dfs[i] = df
+		return dfs
+
+	dfs = correct_censorship(dfs)
+	kmf = KaplanMeierFitter()
+	kmf.fit(dfs[0]['os_years'], dfs[0]['CENSOR'], label='cond')
+	ax = kmf.plot()
+	kmf.fit(dfs[1]['os_years'], dfs[1]['CENSOR'], label='nonCond')
+	ax = kmf.plot(ax=ax)
+	fig = ax.get_figure()
+	#fig.savefig('testFig.pdf')
+
+	print test_significance(dfs[0], dfs[1])
+
 
 #INFORMATION FUNCTIONS ##################################################
 
@@ -26,6 +55,8 @@ def get_median_of_df_col(df, colname, idColumn = 'PATIENT_ID'):
 
 #util to give the top N most epxressed signatures:
 def get_n_top_signatures(row, n=2):
+	#signatureCols = list(row.columns.values)
+	row = row[['mean_' + str(i) for i in range(1,31)]]
 	l = list(row)
 	return list(reversed([str(i + 1) + ':' + str(l[i]) for i in np.argsort(l)[-n:]])) #I plus one to take into account the signatures ordering
 
@@ -33,49 +64,111 @@ def get_n_top_signatures(row, n=2):
 #Conditionals for identifying mutations from specific signatures
 
 #extract
-def get_sig_17_pink_peak_muts(df):
-	return df[
-	(df['Ref_Tri'] == 'CTT') #always the ref tri has to be 'CTT' (which implicitly includes 'ACC' as well) for sig 17 pink peak
-	& (
-	((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-	| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-	)
-	]
+def get_sig_17_pink_peak_muts(df, mode=True):
+	if mode:
+		return df[
+		(df['Ref_Tri'] == 'CTT') #always the ref tri has to be 'CTT' (which implicitly includes 'ACC' as well) for sig 17 pink peak
+		& (
+		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+		)
+		]
 
-def get_tcga_sig_17_muts(df):
-	return df[
+	else: 
+		return df[~ #NOT!
 		(
-		(df['Ref_Tri'] == 'CTT') 
-		& (
-		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-		)
-
-		|
-
-		(df['Ref_Tri'] == 'ATT') 
-		& (
-		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-		)
-
-		|
-
-		(df['Ref_Tri'] == 'GTT') 
-		& (
-		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-		)
-
-		|
-
-		(df['Ref_Tri'] == 'TTT') 
+		(df['Ref_Tri'] == 'CTT') #always the ref tri has to be 'CTT' (which implicitly includes 'ACC' as well) for sig 17 pink peak
 		& (
 		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
 		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
 		)
 		)
-	]
+		]
+
+def get_tcga_sig_17_muts(df, mode=True):
+	if mode:
+		return df[
+			(
+			(df['Ref_Tri'] == 'CTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'ATT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'GTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'TTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+		]
+
+	else:
+		return df[~ #NOT!!!
+			(
+			(
+			(df['Ref_Tri'] == 'CTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'ATT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'GTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'TTT') 
+			& (
+			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
+			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
+			)
+			)
+			)
+		]		
 
 #STATISTICAL TESTS ####################################################
 
@@ -108,7 +201,6 @@ def do_pearson_correlation_one_df(df, col1, col2):
 def print_for_cbio_portal(s):
 	for v in s:
 		print v
-
 
 
 def main():
