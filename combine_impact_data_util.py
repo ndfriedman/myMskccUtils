@@ -9,6 +9,7 @@ import numpy as np
 
 import data_compacting_and_cleaning_util
 
+
 #TODO: make these functions parameter based instead of arguemnt based
 
 #function to combine case based annotations (patient drugs etc)
@@ -103,21 +104,24 @@ def combine_variant_based_dfs(mafAnnoDf=None, triuncDf=None,
 
 	#create a unique identifier for joining the dfs
 	def create_chr_pos_join_key(row):
-		return str(row['Chromosome']) + ':' + str(row['Start_Position']) + '->'  + str(row['End_Position']) + ';' + str(row['Tumor_Seq_Allele2'])
+		return str(row['Chromosome']) + ':' + str(row['Start_Position']) + '->'  + str(row['End_Position']) + ';' + str(row['Tumor_Seq_Allele2']) + '/'  + str(row['Tumor_Seq_Allele2'])
 
 	dfsToAmalgamate = []
 	if mafAnnoDf != None:
 		mafAnnoData = pd.read_table(mafAnnoDf)
 		mafAnnoData['joinCol'] = mafAnnoData.apply(lambda row: create_chr_pos_join_key(row), axis=1)
+		mafAnnoData = mafAnnoData.drop_duplicates(subset=['joinCol'])
 		dfsToAmalgamate.append(mafAnnoData)
 
 	if triuncDf != None:
 		triuncData = pd.read_table(triuncDf)
-		triuncData = triuncData[['Chromosome', 'Start_Position', 'End_Position', 'Tumor_Seq_Allele2', 'Ref_Tri']]
+		triuncData = triuncData[['Chromosome', 'Start_Position', 'End_Position', 'Tumor_Seq_Allele1', 'Tumor_Seq_Allele2', 'Ref_Tri']]
 		triuncData['joinCol'] = triuncData.apply(lambda row: create_chr_pos_join_key(row), axis=1)
+		triuncData = triuncData[['joinCol', 'Ref_Tri']]
+		triuncData = triuncData.drop_duplicates(subset=['joinCol'])
 		dfsToAmalgamate.append(triuncData)
 
-	mergedDf = data_compacting_and_cleaning_util.amalgamate_dfs_same_col(dfsToAmalgamate, 'joinCol')
+	mergedDf = pd.merge(dfsToAmalgamate[0], dfsToAmalgamate[1], how='inner')
 
 	if writeCombinedDf:
 		writePath = os.path.join(outputDirPath, outputFilename)
