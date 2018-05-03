@@ -110,6 +110,15 @@ def sanity_check_mutation_counts(signaturesFilePath):
 	perform_sanity_check_on_dict(sanityCheckDict)
 
 
+def subset_triunc_signature_fractions(signature, nucleotides, spectrumFile='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'):
+	mutationSigTable = pd.read_table(spectrumFile)
+	mutationSigTable['signature'] = mutationSigTable.index
+	curSignature = mutationSigTable[mutationSigTable['signature'] == 'Signature.' + signature]
+	s = 0
+	for nuc in nucleotides:
+		s += float(curSignature[nuc])
+	return s
+
 def main():
 
 	parser = argparse.ArgumentParser(description='Noahs script!')
@@ -123,7 +132,8 @@ def main():
 
 	args.triuncOnly = True
 	args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
-	run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=args.triuncOnly)
+	outputPath = os.path.join(args.outputDir, args.outputFilename)
+	run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=args.triuncOnly, tMaf=outputPath)
 
 
 
