@@ -41,12 +41,12 @@ def make_kaplan_meier_plots(dfs):
 #INFORMATION FUNCTIONS ##################################################
 
 #returns the mean value of a column specified by colname
-def get_mean_of_df_col(df, colname, idColumn = 'PATIENT_ID'):
+def get_mean_of_df_col(df, colname, idColumn = 'Tumor_Sample_Barcode'):
 	df = df.drop_duplicates(subset=[idColumn])
 	return np.nanmean(np.asarray(list(df[colname])))
 
 #returns the median of a df column
-def get_median_of_df_col(df, colname, idColumn = 'PATIENT_ID'):
+def get_median_of_df_col(df, colname, idColumn = 'Tumor_Sample_Barcode'):
 	df = df.drop_duplicates(subset=[idColumn])
 	return np.nanmedian(np.asarray(list(df[colname])))
 
