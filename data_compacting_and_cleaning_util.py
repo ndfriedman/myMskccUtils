@@ -2,6 +2,8 @@ import sys
 import os
 from collections import Counter
 import pandas as pd
+import math
+import argparse
 
 #reads in a caselist file and returns a set of case ids (tumor sample barcodes)
 def read_in_case_list(filename):
@@ -16,6 +18,27 @@ def read_in_case_list(filename):
 def extract_patient_name(df, patientNameColumn='Tumor_Sample_Barcode'):
 	df[patientNameColumn] = df[patientNameColumn].apply(lambda x: x[:9])
 	return df
+
+#a function designed to 
+def add_f_hi_mcn_col_to_results(df):
+	caseToVariantsDict = {} #for fast operation we do everything in a dict here 
+	sampleIds = set(df['Tumor_Sample_Barcode'])
+	for index, row in df.iterrows():
+		bcode = row['Tumor_Sample_Barcode']
+		if bcode in caseToVariantsDict:
+			caseToVariantsDict[bcode].append(row)
+		else:
+			caseToVariantsDict[bcode] = [row]
+
+	for barcode, variants in caseToVariantsDict.items():
+		for var in variants:
+			if not math.isnan(var['tcn']) and  not math.isnan(var['lcn']):
+				dif = var['tcn'] - var['lcn']
+				if dif >= 2: 
+					print var['loc.start'], var['loc.end']
+			#print var['tcn'], var['lcn']
+
+
 
 #util function to expand a column of a df
 def expand_col(df, col):
@@ -187,10 +210,40 @@ def reduce_and_write_df():
 	return 0
 
 
+def fold_in_facets_qc_info(facetsQCFilepath, annotatedMafFilepath):
+	facetsDf = pd.read_table(facetsQCFilepath)
+	annotatedMafDf = pd.read_table(annotatedMafFilepath, skiprows=[0])
+	print facetsDf.shape, annotatedMafDf.shape
+	print list(facetsDf.columns.values)
+	print list(annotatedMafDf.columns.values)
+
+	print facetsDf.merge(annotatedMafDf, on='Tumor_Sample_Barcode').shape
+	print annotatedMafDf.merge(facetsDf, on='Tumor_Sample_Barcode').shape
 
 
+def quick_util(pathFacets, pathRdata):
+	dfFacets = pd.read_table(pathFacets)
+	dfRdata = pd.read_table(pathRdata)
+	s1 = set(dfFacets['Tumor_Sample_Barcode'])
+	s2 = set(dfRdata['Tumor_Sample_Barcode'])
 
+	dfReduced = dfRdata[dfRdata['Tumor_Sample_Barcode'].isin(s2 - s1)]
+	dfReduced.to_csv('pathsOfFailure.txt', sep='\t', index=False)
 
+def main():
+
+	parser = argparse.ArgumentParser(description='Arg parser for this script')
+	parser.add_argument('--mode', help='path to the dir for facets output', default='doNothing')
+
+	facetsQCSumPath = '/ifs/work/taylorlab/friedman/myAdjustedDataFiles/facetsUtilFiles/FACETS_QC_summary.txt'
+	rdataWithPathsPath = '/ifs/work/taylorlab/friedman/myAdjustedDataFiles/rdata_filenames.txt'
+	mafAnnoMaf = '~/friedman/myAdjustedDataFiles/data_mutations_unfiltered_mafAnno.maf'
+
+	fold_in_facets_qc_info(facetsQCSumPath, mafAnnoMaf)
+	
+
+if __name__ == '__main__':
+    main()
 
 
 
