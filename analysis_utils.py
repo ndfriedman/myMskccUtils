@@ -170,6 +170,30 @@ def get_tcga_sig_17_muts(df, mode=True):
 			)
 		]		
 
+def get_pole_mutations(df, mode=True): #note lazy way just gets the big peaks
+	return df[
+		(
+		(df['Ref_Tri'] == 'TCT') 
+		& (
+		((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
+		| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
+		)
+		)
+
+		|
+
+		(
+		(df['Ref_Tri'] == 'TCG') 
+		& (
+		((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
+		| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
+		)
+		)
+
+		]
+
+
+
 #STATISTICAL TESTS ####################################################
 
 def test_significance(df1, df2):
