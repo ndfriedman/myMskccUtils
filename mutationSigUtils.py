@@ -20,6 +20,7 @@ def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, triuncOnly=F
 	def run_signatures_code(scriptDir, sMaf, outputFile):
 		signaturesScriptPath = os.path.join(scriptDir, 'main.py')
 		signaturesFilePath = '/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'
+		#signaturesFilePath = '/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt'
 		cmd = 'python {sPath} {sigFilePath} {sourceMafPath} {targetFilePath} --spectrum_output spectrumNoah.txt'.format(sPath = signaturesScriptPath, sigFilePath = signaturesFilePath, sourceMafPath = sMaf, targetFilePath = outputFile)
 		print 'executing Signatures command: ', cmd
 		subprocess.Popen(cmd, shell=True).wait()
@@ -119,6 +120,11 @@ def subset_triunc_signature_fractions(signature, nucleotides, spectrumFile='/ifs
 		s += float(curSignature[nuc])
 	return s
 
+
+def annotate_mutations_with_signatures_in_case():
+	return 0
+
+
 def main():
 
 	parser = argparse.ArgumentParser(description='Noahs script!')
@@ -127,13 +133,22 @@ def main():
 	parser.add_argument('--outputFilename', help='output filename', default=None)
 	parser.add_argument('--mutationalSignaturesScriptPath', help='path to the mutational signatures script', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures')
 	parser.add_argument('--triuncOnly', help='mode for whether we just generate the triunc only file', default=False)
+	parser.add_argument('--mode', help='mode for whether we just generate the triunc only file', default='triuncOnly')
+
 
 	args = parser.parse_args()
 
-	args.triuncOnly = True
-	args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
-	outputPath = os.path.join(args.outputDir, args.outputFilename)
-	run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=args.triuncOnly, tMaf=outputPath)
+	triuncOnly = False
+	if args.mode == 'triuncOnly':
+		triuncOnly = True
+
+	if args.mode == 'annotateMutations':
+		return 0
+
+	else:
+		args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
+		outputPath = os.path.join(args.outputDir, args.outputFilename)
+		run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=triuncOnly, tMaf=outputPath)
 
 
 
