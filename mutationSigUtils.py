@@ -121,9 +121,35 @@ def subset_triunc_signature_fractions(signature, nucleotides, spectrumFile='/ifs
 	return s
 
 
-def annotate_mutations_with_signatures_in_case():
-	return 0
+def annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/maf2mafAnnotatedMay16filteredMafWithIsHotspot.maf',
+	signaturesFile='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/mutationSigFiles/may16unfiltered30sigs.txt'
+	):
 
+	def convert_signatures_file_to_dict(signaturesFile):
+		dictToDict = {}
+		df = pd.read_table(signaturesFile)
+		dfDictList = df.to_dict(orient='records')
+		for row in dfDictList:
+			barcode = row['Sample Name']
+			del row['Number of Mutations']
+			del row['Sample Name']
+			dictToDict[barcode] = row
+		return dictToDict
+
+	barcodeToSignaturesDict = convert_signatures_file_to_dict(signaturesFile)
+	mutationsDf = pd.read_table(mutationsFileToAnnotate)
+	dfMutationsList = mutationsDf.to_dict(orient='records')
+	listOfDicts = []
+	for row in dfMutationsList:
+		barcode = row['Tumor_Sample_Barcode']
+		if barcode in barcodeToSignaturesDict:
+			signaturesInfo = barcodeToSignaturesDict[barcode]
+			rowCopy = row.copy()
+			rowCopy.update(signaturesInfo)
+			listOfDicts.append(rowCopy)
+	df = pd.DataFrame(listOfDicts)
+	print 'writing file to ', 'FilteredMafWithHospotAndSignatures.maf'
+	df.to_csv('FilteredMafWithHospotAndSignatures.maf', sep='\t', index=False)
 
 def main():
 
@@ -143,7 +169,7 @@ def main():
 		triuncOnly = True
 
 	if args.mode == 'annotateMutations':
-		return 0
+		annotate_mutations_with_signatures_in_case()
 
 	else:
 		args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
