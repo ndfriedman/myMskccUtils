@@ -51,6 +51,10 @@ def get_median_of_df_col(df, colname, idColumn = 'Tumor_Sample_Barcode'):
 	return np.nanmedian(np.asarray(list(df[colname])))
 
 
+def get_n_cases_with_mutation_present(maf, gene, idCol='Tumor_Sample_Barcode'):
+	n = len(set(maf[maf['Hugo_Symbol'] == 'TP53'][idCol]))
+	print n, 1.0*n/len(set(maf['Tumor_Sample_Barcode']))
+
 #SIGNATURE SPECIFIC ANALYSIS UTILS #############################################################
 
 #util to give the top N most epxressed signatures:
@@ -171,26 +175,54 @@ def get_tcga_sig_17_muts(df, mode=True):
 		]		
 
 def get_pole_mutations(df, mode=True): #note lazy way just gets the big peaks
-	return df[
-		(
-		(df['Ref_Tri'] == 'TCT') 
-		& (
-		((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
-		| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
-		)
-		)
+	
+	if mode:
+	
+		return df[
+			(
+			(
+			(df['Ref_Tri'] == 'TCT') 
+			& (
+			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
+			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
+			)
+			)
 
-		|
+			|
 
-		(
-		(df['Ref_Tri'] == 'TCG') 
-		& (
-		((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
-		| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
-		)
-		)
+			(
+			(df['Ref_Tri'] == 'TCG') 
+			& (
+			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
+			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
+			)
+			)
+			)
+			]
 
-		]
+	else:
+	
+		return df[~
+			(
+			(
+			(df['Ref_Tri'] == 'TCT') 
+			& (
+			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
+			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
+			)
+			)
+
+			|
+
+			(
+			(df['Ref_Tri'] == 'TCG') 
+			& (
+			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
+			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
+			)
+			)
+			)
+			]
 
 
 
