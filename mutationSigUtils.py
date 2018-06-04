@@ -8,7 +8,7 @@ import argparse
 
 
 #run code to get mutational signatures
-def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, triuncOnly=False, tMaf=None):
+def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, signaturesFilePath, triuncOnly=False, tMaf=None):
 	def run_triunc_command(scriptDir, sMaf, tMaf):
 		triuncScriptPath = os.path.join(scriptDir, 'make_trinuc_maf.py')
 		cmd = 'python {sPath} {sourceMafPath} {TargetMafPath}'.format(sPath = triuncScriptPath, sourceMafPath = sMaf, TargetMafPath = tMaf)
@@ -17,10 +17,8 @@ def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, triuncOnly=F
 		print 'Triunc command completed'
 		return tMaf
 
-	def run_signatures_code(scriptDir, sMaf, outputFile):
+	def run_signatures_code(scriptDir, sMaf, outputFile, signaturesFilePath):
 		signaturesScriptPath = os.path.join(scriptDir, 'main.py')
-		signaturesFilePath = '/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'
-		#signaturesFilePath = '/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt'
 		cmd = 'python {sPath} {sigFilePath} {sourceMafPath} {targetFilePath} --spectrum_output spectrumNoah.txt'.format(sPath = signaturesScriptPath, sigFilePath = signaturesFilePath, sourceMafPath = sMaf, targetFilePath = outputFile)
 		print 'executing Signatures command: ', cmd
 		subprocess.Popen(cmd, shell=True).wait()
@@ -38,7 +36,7 @@ def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, triuncOnly=F
 	print triuncMaf
 	print 'RUMi'
 	targetSignaturesFile = outputFilePath
-	run_signatures_code(scriptDir, triuncMaf, targetSignaturesFile)
+	run_signatures_code(scriptDir, triuncMaf, targetSignaturesFile, signaturesFilePath)
 
 #sanity check that the code works by summing up the counts
 def sanity_check_mutation_counts(signaturesFilePath):
@@ -120,6 +118,43 @@ def subset_triunc_signature_fractions(signature, nucleotides, spectrumFile='/ifs
 		s += float(curSignature[nuc])
 	return s
 
+#UTILITIES FOR ASSIGING mutations to the signature that most likely caused them
+#creates the reference four nucleotide context for signatures
+def create_reference_four_nuc(refTri, refAllele, altAllele):
+	#properly invert when needed
+	def invert_allele_and_ref_tri(altAllele):
+		nucleotideDict = {'A': 'T', 'G': 'C', 'C':'G', 'T':'A'}
+		return nucleotideDict[altAllele]
+
+	refAlleleFromReftri = refTri[1]
+	alt = altAllele
+	if refAlleleFromReftri != refAllele:
+		alt = invert_allele_and_ref_tri(altAllele)
+	quadNuc = refTri[:2] + alt + refTri[2]
+	return quadNuc
+
+
+def assign_most_likely_mutation(spectrumDict, row, n = 1):
+	fourNuc = create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'])
+	signatures = ['Signature.' + str(i) for i in range(1,31)]
+	row = row[signatures]
+	rowAsDict = row.to_dict()
+	l = []
+	for key, value in rowAsDict.items():
+		l.append((key, value*spectrumDict[key][fourNuc]))
+	signatures = [i[0] for i in l]
+	values = [i[1] for i in l]
+	sortedL = [x for _,x in sorted(zip(values, signatures), reverse=True)]
+	return sortedL[:n] #returns the n most ocmmon signatures
+
+# a little utility function to convert the mutations spectrum file to a dictionary of dictionaries for quicker lookup and access
+def convert_spectrum_file_to_dict_of_dicts(spectrumFile='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'):
+	d = {}
+	df = pd.read_table(spectrumFile)
+	for index, row in df.iterrows():
+		localD = row.to_dict()
+		d[str(index)] = localD
+	return d
 
 def annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/maf2mafAnnotatedMay16filteredMafWithIsHotspot.maf',
 	signaturesFile='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/mutationSigFiles/may16unfiltered30sigs.txt'
@@ -151,6 +186,14 @@ def annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate='/ifs/wor
 	print 'writing file to ', 'FilteredMafWithHospotAndSignatures.maf'
 	df.to_csv('FilteredMafWithHospotAndSignatures.maf', sep='\t', index=False)
 
+
+def create_limited_spectrum_file(signaturesToInclude, oldSpectrumFile='/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt', outputDir='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/spectrumFiles'):
+	spectrumDf = pd.read_table(oldSpectrumFile)
+	spectrumDf = spectrumDf.ix[signaturesToInclude]
+	writePath = os.path.join(outputDir, 'bladderSignatures.txt')
+	print 'writing file to ', writePath
+	spectrumDf.to_csv(writePath, index=True, sep='\t')
+
 def main():
 
 	parser = argparse.ArgumentParser(description='Noahs script!')
@@ -158,24 +201,31 @@ def main():
 	parser.add_argument('--outputDir', help='output directory', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles')
 	parser.add_argument('--outputFilename', help='output filename', default=None)
 	parser.add_argument('--mutationalSignaturesScriptPath', help='path to the mutational signatures script', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures')
-	parser.add_argument('--triuncOnly', help='mode for whether we just generate the triunc only file', default=False)
+	parser.add_argument('--trinucOnly', help='mode for whether we just generate the triunc only file', default=False)
 	parser.add_argument('--mode', help='mode for whether we just generate the triunc only file', default='triuncOnly')
+	parser.add_argument('--spectrumFilePath', help='path to the spectrum file', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt')  #signaturesFilePath = '/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt'
 
 
 	args = parser.parse_args()
 
-	triuncOnly = False
-	if args.mode == 'triuncOnly':
-		triuncOnly = True
+	trinucOnly = False
+	if args.mode == 'trinucOnly':
+		args.mode = 'runMutSigs' #change mode to move with logic (alert confusing logic and dsylexic variable naming)
+		trinucOnly = True
 
 	if args.mode == 'annotateMutations':
-		annotate_mutations_with_signatures_in_case()
+		annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate=args.inputMaf)
 
-	else:
+	elif args.mode == 'createSpectrumFile':
+		signaturesToInclude = ['SBS1', 'SBS2', 'SBS5', 'SBS10a', 'SBS10b', 'SBS13', 'SBS31', 'SBS35']
+		create_limited_spectrum_file(signaturesToInclude)
+
+	elif args.mode == 'runMutSigs':
 		args.mutationalSignaturesOutputPath = os.path.join(args.outputDir, ''.join([args.outputFilename, 'mutationalSignatuesOutput.txt']))
 		outputPath = os.path.join(args.outputDir, args.outputFilename)
-		run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, triuncOnly=triuncOnly, tMaf=outputPath)
+		run_mutational_signatures_code(args.mutationalSignaturesScriptPath, args.mutationalSignaturesOutputPath, args.inputMaf, args.spectrumFilePath, triuncOnly=trinucOnly, tMaf=outputPath)
 
+	else: print 'invalid mode specified', args.mode
 
 
 if __name__ == '__main__':
