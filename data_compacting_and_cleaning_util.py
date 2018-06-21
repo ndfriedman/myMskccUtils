@@ -20,6 +20,7 @@ def extract_patient_name(df, patientNameColumn='Tumor_Sample_Barcode'):
 	return df
 
 #a function designed to 
+#NOT COMPLETE! USE facets QC instead
 def add_f_hi_mcn_col_to_results(df):
 	caseToVariantsDict = {} #for fast operation we do everything in a dict here 
 	sampleIds = set(df['Tumor_Sample_Barcode'])
@@ -93,6 +94,9 @@ def expand_col(df, col):
 	df = assign_cols(df, cols, col)
 	return df
 
+##########################################################
+
+
 ##################COLUMN creation
 
 #creates a PATIENT ID col for the df by doing reasoning on the tumor sample barcode col
@@ -103,7 +107,7 @@ def create_patient_id_col(df):
 def create_expected_mut_copies_col(df):
 	df['VAF'] = df['t_alt_count'] / (df['t_alt_count'] + df['t_ref_count']) 
 	df['expectedMutCopies'] = (df['VAF'] * (2*(1 - df['purity']) + df['purity'] * df['tcn']))/df['purity']
-	df['preGenomeDoubling'] = df['expectedMutCopies'].apply(lambda x: 1 if x > 1.5 else 0)
+	df['genomeDoubled'] = df['expectedMutCopies'].apply(lambda x: 1 if x > 1.5 else 0)
 	return df
 
 #a function that takes the cna cols we have and changes them into a formate amenable to analysis
