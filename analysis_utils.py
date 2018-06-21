@@ -55,6 +55,20 @@ def get_n_cases_with_mutation_present(maf, gene, idCol='Tumor_Sample_Barcode'):
 	n = len(set(maf[maf['Hugo_Symbol'] == 'TP53'][idCol]))
 	print n, 1.0*n/len(set(maf['Tumor_Sample_Barcode']))
 
+
+def get_age_information(ageInformationPath = '/ifs/work/taylorlab/friedman/msk-impact/msk-impact/darwin/darwin_age.txt'):
+	ageDf = pd.read_table(ageInformationPath)
+	d = dict(zip(ageDf['PATIENT_ID'], ageDf['AGE']))
+	return d
+
+def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/msk-impact/msk-impact/data_clinical_sample.txt', mode='pid'):
+	cancerTypeDf = pd.read_table(cancerTypeDfPath)
+	if mode == 'pid':
+		cancerTypeDf['#Sample Identifier'] = cancerTypeDf['#Sample Identifier'].apply(lambda x: x[:9])
+	d = dict(zip(cancerTypeDf['#Sample Identifier'], cancerTypeDf['Cancer Type']))
+	return d
+
+
 #SIGNATURE SPECIFIC ANALYSIS UTILS #############################################################
 
 #util to give the top N most epxressed signatures:
