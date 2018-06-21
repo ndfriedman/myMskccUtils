@@ -1,0 +1,2 @@
+#!/bin/bash
+python /ifs/work/taylorlab/friedman/myUtils/mutationSigUtils.py --mode runMutSigs --inputMaf  /ifs/work/taylorlab/friedman/myAdjustedDataFiles/adjustedSubsetMafs/bladderCases.maf --spectrumFilePath /ifs/work/taylorlab/friedman/myAdjustedDataFiles/spectrumFiles/bladderSignatures.txt --outputDir /ifs/work/taylorlab/friedman/myAdjustedDataFiles --outputFilename mutSignaturesInBladderReducedSigs
