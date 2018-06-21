@@ -1,0 +1,14 @@
+This directory contains functions I consider utilities valuable for many different contexts
+adjustMafsForMutationSigs-> changes a maf by altering sample names or filtering stuff out to prepare for running mutation signatures
+analysis_utils->omni script containing lots of useful analysis functionalities (means of columns, mutation attribution and more)
+create_cncf_or_rdata_file_list-> looks into a directory to provide the proper paths and files for running facetsQC
+data_compacting_and_cleaning_util->a utility collection that does
+reshaping and compacting of dataframes
+format_signatures_csv_util->util for afjusting new mutational signatures
+csv
+get_data_about_cohort->gives a summary of some relevant information for
+a cohort
+maf_subsetter->subsets maf into smaller shapes as needed 
+mutationSigUtils->utility that runs mutational signatures scripts
+plottingScripts: do what their titles say
+shellScripts: do what their titles say
