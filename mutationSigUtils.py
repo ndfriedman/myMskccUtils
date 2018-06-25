@@ -201,17 +201,17 @@ def merge_signature_columns(df, mode='Stratton'):
 	if mode == 'Stratton':
 		df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
 		df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
-		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_26']), axis=1)
-		df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['confidence_20'] + row['confidence_26'], axis=1)	
-		df = df.drop(['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_26',
-			'mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_26'
+		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_21'], row['confidence_26']), axis=1)
+		df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['mean_20'] + row['mean_21'] + row['mean_26'], axis=1)	
+		df = df.drop(['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_21', 'confidence_26',
+			'mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26'
 			], axis=1)
 		return df
 
 	#TODO implement mean merges for SBS mode
 	elif mode == 'SBS':
 		df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_SBS2'], row['confidence_SBS13']), axis=1)
-		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_SBS6'], row['confidence_SBS15'], row['confidence_SBS20'], row['confidence_SBS20'], row['confidence_SBS26'], row['confidence_SBS44']), axis=1)
+		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_SBS6'], row['confidence_SBS15'], row['confidence_SBS20'], row['confidence_SBS21'], row['confidence_SBS26'], row['confidence_SBS44']), axis=1)
 		df['confidence_BRCA'] = df.apply(lambda row: max(row['confidence_SBS3'], row['confidence_SBS39']), axis=1)
 		df['confidence_UV'] = df.apply(lambda row: max(row['confidence_SBS7a'], row['confidence_SBS7b'], row['confidence_SBS7c'], row['confidence_SBS7d']), axis=1)
 		df['confidence_POLE'] = df.apply(lambda row: max(row['confidence_SBS10a'], row['confidence_SBS10b']), axis=1)
