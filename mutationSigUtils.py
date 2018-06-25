@@ -156,7 +156,7 @@ def convert_spectrum_file_to_dict_of_dicts(spectrumFile='/ifs/work/taylorlab/fri
 		d[str(index)] = localD
 	return d
 
-def annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/maf2mafAnnotatedMay16filteredMafWithIsHotspot.maf',
+def annotate_mutations_with_signatures_in_case(outputFilename, outputDir, mutationsFileToAnnotate='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/maf2mafAnnotatedMay16filteredMafWithIsHotspot.maf',
 	signaturesFile='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/mutationSigFiles/may16unfiltered30sigs.txt'
 	):
 
@@ -183,8 +183,9 @@ def annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate='/ifs/wor
 			rowCopy.update(signaturesInfo)
 			listOfDicts.append(rowCopy)
 	df = pd.DataFrame(listOfDicts)
-	print 'writing file to ', 'FilteredMafWithHospotAndSignatures.maf'
-	df.to_csv('FilteredMafWithHospotAndSignatures.maf', sep='\t', index=False)
+	writePath = os.path.join(outputDir, outputFilename)
+	print 'writing file to ', writePath
+	df.to_csv(writePath, sep='\t', index=False)
 
 
 def create_limited_spectrum_file(signaturesToInclude, oldSpectrumFile='/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt', outputDir='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/spectrumFiles'):
@@ -193,6 +194,37 @@ def create_limited_spectrum_file(signaturesToInclude, oldSpectrumFile='/ifs/work
 	writePath = os.path.join(outputDir, 'bladderSignatures.txt')
 	print 'writing file to ', writePath
 	spectrumDf.to_csv(writePath, index=True, sep='\t')
+
+#####################UTILITIES FOR MERGING MUTATIONAL SIGNATURE COLUMNS
+
+def merge_signature_columns(df, mode='Stratton'):
+	if mode == 'Stratton':
+		df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
+		df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
+		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_26']), axis=1)
+		df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['confidence_20'] + row['confidence_26'], axis=1)	
+		df = df.drop(['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_26',
+			'mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_26'
+			], axis=1)
+		return df
+
+	#TODO implement mean merges for SBS mode
+	elif mode == 'SBS':
+		df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_SBS2'], row['confidence_SBS13']), axis=1)
+		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_SBS6'], row['confidence_SBS15'], row['confidence_SBS20'], row['confidence_SBS20'], row['confidence_SBS26'], row['confidence_SBS44']), axis=1)
+		df['confidence_BRCA'] = df.apply(lambda row: max(row['confidence_SBS3'], row['confidence_SBS39']), axis=1)
+		df['confidence_UV'] = df.apply(lambda row: max(row['confidence_SBS7a'], row['confidence_SBS7b'], row['confidence_SBS7c'], row['confidence_SBS7d']), axis=1)
+		df['confidence_POLE'] = df.apply(lambda row: max(row['confidence_SBS10a'], row['confidence_SBS10b']), axis=1)
+		df['confidence_Sig17'] = df.apply(lambda row: max(row['confidence_SBS17a'], row['confidence_SBS17b']), axis=1)
+		df = df.drop(['confidence_SBS2', 'confidence_SBS13', 
+			'confidence_SBS6', 'confidence_SBS15', 'confidence_SBS20', 'confidence_SBS21', 'confidence_SBS26', 'confidence_SBS44', 
+			'confidence_SBS3', 'confidence_SBS39',
+			'confidence_SBS7a', 'confidence_SBS7b', 'confidence_SBS7c', 'confidence_SBS7d',
+			'confidence_SBS10a', 'confidence_SBS10b',
+			'confidence_SBS17a', 'confidence_SBS17b'], axis=1)
+		return df
+	else:
+		print 'error improper mode specified'
 
 def main():
 
@@ -214,7 +246,7 @@ def main():
 		trinucOnly = True
 
 	if args.mode == 'annotateMutations':
-		annotate_mutations_with_signatures_in_case(mutationsFileToAnnotate=args.inputMaf)
+		annotate_mutations_with_signatures_in_case(args.outputFilename, args.outputDir, mutationsFileToAnnotate=args.inputMaf)
 
 	elif args.mode == 'createSpectrumFile':
 		signaturesToInclude = ['SBS1', 'SBS2', 'SBS5', 'SBS10a', 'SBS10b', 'SBS13', 'SBS31', 'SBS35']
