@@ -5,6 +5,7 @@ import os
 import subprocess
 import pandas as pd
 import argparse
+import re
 
 
 #run code to get mutational signatures
@@ -126,6 +127,7 @@ def create_reference_four_nuc(refTri, refAllele, altAllele):
 		nucleotideDict = {'A': 'T', 'G': 'C', 'C':'G', 'T':'A'}
 		return nucleotideDict[altAllele]
 
+	refTri = str(refTri) #just make sure the ref tri is a string here to avoid funny business
 	refAlleleFromReftri = refTri[1]
 	alt = altAllele
 	if refAlleleFromReftri != refAllele:
@@ -133,19 +135,34 @@ def create_reference_four_nuc(refTri, refAllele, altAllele):
 	quadNuc = refTri[:2] + alt + refTri[2]
 	return quadNuc
 
-
-def assign_most_likely_mutation(spectrumDict, row, n = 1):
+#assigns the signature that was most likely to create a mutation
+def assign_most_likely_mutation(spectrumDict, row, 
+	n = 1,  #the number of most likely mutations we would like to return
+	signatures=None, #if the argument signatures is specified we use that as the possible signatures
+	signaturesPrefix = 'Signature.', #prefix for spec
+	returnSpectrumProb=False #if true we return the most likely spectrum prob, not just the spectrum
+	): 
 	fourNuc = create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'])
-	signatures = ['Signature.' + str(i) for i in range(1,31)]
+	if signatures == None: 
+		signatures = [signaturesPrefix + str(i) for i in range(1,31)]
 	row = row[signatures]
 	rowAsDict = row.to_dict()
 	l = []
 	for key, value in rowAsDict.items():
+		key = re.sub('mean_', 'Signature.', key) #make sure we have the proper key to index into the spectrum dict
 		l.append((key, value*spectrumDict[key][fourNuc]))
 	signatures = [i[0] for i in l]
 	values = [i[1] for i in l]
 	sortedL = [x for _,x in sorted(zip(values, signatures), reverse=True)]
-	return sortedL[:n] #returns the n most ocmmon signatures
+	if returnSpectrumProb:
+		returnL = [(sig, spectrumDict[sig][fourNuc]) for sig in sortedL[:n]]
+		return returnL
+	else:
+		return sortedL[:n] #returns the n most ocmmon signatures
+
+def get_spectrum_probability(spectrumDict, row, dominantSignature):
+	fourNuc = create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'])
+	return spectrumDict[dominantSignature][fourNuc]
 
 # a little utility function to convert the mutations spectrum file to a dictionary of dictionaries for quicker lookup and access
 def convert_spectrum_file_to_dict_of_dicts(spectrumFile='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'):
@@ -225,6 +242,34 @@ def merge_signature_columns(df, mode='Stratton'):
 		return df
 	else:
 		print 'error improper mode specified'
+		sys.exit()
+
+#utility function to do the ninja work required to give me the adjusted signature names
+def get_adjusted_signature_column_names(mode = 'Stratton'):
+	if mode == 'Stratton':
+		cols = ['mean_' + str(i) for i in range(30)]
+		removeCols = ['mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26']
+		for c in removeCols: cols.remove(c)
+		cols.append('mean_APOBEC')
+		cols.append('mean_MMR')
+		return cols
+	elif mode == 'SBS':
+		print 'uh oh noah was too lazy to implement me'
+	else:
+		print 'error improper mode specified'
+		sys.exit()
+
+#returns the dominant signautre for a row of a df expressed as a dict with the specified signatures under consideration
+def get_dominant_signature(rowAsDict, cols=None):
+	if cols == None:
+		cols = get_adjusted_signature_column_names()
+	tupList = []
+	for key, value in rowAsDict.items():
+		if 'mean' in key: tupList.append((key, value))
+	sortedSigs = sorted(tupList, key = lambda tup: tup[1], reverse=True)
+	return sortedSigs[0][0]
+
+	#TODO return magnitude etc to help with classification
 
 def main():
 
