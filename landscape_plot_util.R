@@ -3,6 +3,7 @@ library(ggplot2)
 library(grid)
 require(cowplot)
 library(egg)
+require(plyr)
 
 #utils Copy
 
@@ -65,28 +66,30 @@ get_empty_theme <- function(){
   )
 }
 
-make_bar_comparison <- function(df, title,  hideLegend = TRUE, textSize=1) {
-  
-  #ordering
-  #c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC')
-  barColorPalette = c(
-    "#FF1493", #brca
-    "#00FFFF", #age  
-    "#267574", #mmr
-    "#FFF600", #Uv
-    "#ADFF2F", #POLE
-    "#FFA500", #smoking 
-    "#2A52BE", #sig5
-    "#551A8B", #sig8
-    "#D3D3D3", #OTHER
-    "#FF0000" #APOBEC
-  )
+#makes a plot comparing the signature of interest of the predominant signature
+make_bar_comparison <- function(df, 
+                                xAxisValParam, yAxisValParam1, yAxisValParam2, yAxisFillParam, orderingValParam,
+                                mainColor="#FF0000", coloringSpecCols, barColorPalette, #used for coloring the bar chart
+                                title,  hideLegend = TRUE, textSize=1) {
+  #first make the ordering column before any of the rest of this bullshit
+  df$orderingVal <-df[[orderingValParam]]
+  #CHANGE THE DF Columns
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, yAxisValParam1, "yAxisVal1")
+  df <- my.rename(df, yAxisValParam2, "yAxisVal2")
+  df <- my.rename(df, yAxisFillParam, "yAxisFill")
   
   plt <- ggplot(df)+
-    geom_bar(aes(x = reorder(dmp_sample, -brca_signature), y=-otherSigMagnitude, fill=factor(otherPredominantSignature,
-                                                                                             levels=c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC'))),
-             stat = "identity")+
-    geom_bar(aes(x = reorder(dmp_sample, -brca_signature), y=brca_signature), stat="identity",fill="#FF1493")+
+    
+    #The first bar of the predominant signature in the positive direction
+    geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=yAxisVal1), stat="identity",fill=mainColor)+
+    
+    #The second bar of the second predominant signature in the negative direction
+    geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=-yAxisVal2, 
+    fill = factor(yAxisFill, levels=coloringSpecCols) #color the other signature column by which signature it is                                                                                     #levels=c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC')
+    ),
+    stat = "identity")+
+    
     geom_hline(yintercept=0, color = "black", size=.25)+
     
     scale_fill_manual(values=barColorPalette, drop = FALSE)+ 
@@ -104,18 +107,27 @@ make_bar_comparison <- function(df, title,  hideLegend = TRUE, textSize=1) {
   return(plt)
 }
 
-make_purity_bar <- function(df, hideLegend = TRUE){
-  plt <- ggplot(df, aes(x = reorder(dmp_sample, -brca_signature), y=0))+
-    geom_tile(aes(fill=purity,
+make_percentage_bar <- function(#makes a bar chart for a 0-100% percentage (ie purity)
+                                df, 
+                                xAxisValParam, xAxisOrderingParam, fillValParam,
+                                titleVal, colorLow="white", colorHigh="#8B0000",
+                                hideLegend = TRUE){ #makes a bar chart for a 0-100% percentage (ie purity)
+  
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+  df <- my.rename(df, fillValParam, "fillVal")
+  
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0))+
+    geom_tile(aes(fill=fillVal,
                   width=0.7, height=0.7), size=5)+
-    scale_fill_gradient(low = "white", high = "black")+
+    scale_fill_gradient(low = colorLow, high = colorHigh)+
     get_empty_theme()
   if(hideLegend == TRUE){
     plt <- plt + theme(legend.position="none")}
   else{
-    plt <- plt + guides(fill=guide_legend(title="Purity"))
+    plt <- plt + guides(fill=guide_legend(title=titleVal))
   }
-  plt <- plt + labs(y = "Purity")+ 
+  plt <- plt + labs(y = titleVal)+ 
     theme(axis.title.y = element_text(angle = 0))
   return(plt)
 }
@@ -191,11 +203,24 @@ generate_ggplot_tiles <- function(df, fillArg, hideLegend = TRUE, mode = "cancer
   return(plt)
 }
 
-generate_mut_burden_bar <- function(df){
-  plt <- ggplot(df, aes(x = reorder(dmp_sample, -brca_signature),
-                        y=nMutationsAdj, fill=nMutClipped)
+my.rename <- function(df, old.name, new.name){ #R SUCKS!!!!!! heres my renaming function cause god forbid there would be an easy or intiuitive way to do this with R
+  names(df)[names(df) == old.name] <- new.name 
+  return(df)
+}
+
+generate_mut_burden_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxisValParam, yAxisFillParam){
+  
+  #Rename columns as needed
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+  df <- my.rename(df, yAxisValParam, "yAxisVal")
+  df <- my.rename(df, yAxisFillParam, "yAxisFill")
+  
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering),
+                        y=yAxisVal, fill=yAxisFill)
   )+
     geom_bar(stat = "identity")+
+    #scale_y_log10()+
     scale_fill_manual(values=c("#2F4F4F","#000000"))+
     theme(
       axis.ticks.x=element_blank(), axis.ticks.y=element_blank(),
@@ -215,6 +240,26 @@ generate_mut_burden_bar <- function(df){
     theme(axis.title.y = element_text(angle = 0, size=5))
   return(plt)
 }
+
+plot_proportion_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxisValParam, label){
+  #Rename columns as needed
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+  df <- my.rename(df, yAxisValParam, "yAxisVal")
+  
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering),
+                        y=yAxisVal)
+  )+
+  geom_bar(stat = "identity")+
+  scale_fill_manual(values=c("#000000"))+
+  geom_hline(aes(yintercept=1), size=0.1)+
+  geom_hline(aes(yintercept=.5), size=0.1, colour="#D3D3D3")+
+  get_empty_theme()
+  plt <- plt + labs(y = label)+ 
+  theme(axis.title.y = element_text(angle = 0, size=5))
+  return(plt)
+}
+
 
 #omnibus plotting function
 make_full_plot <- function(df1,df2,df3,df4,df5, #working with the 5 dataframe version
