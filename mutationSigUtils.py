@@ -173,6 +173,33 @@ def convert_spectrum_file_to_dict_of_dicts(spectrumFile='/ifs/work/taylorlab/fri
 		d[str(index)] = localD
 	return d
 
+#a function used to enumerate which spectra are enriched for each signature. This is useful for understanding which spectra we can associate with a signature
+def get_enriched_spectra_for_signatures(spectrumFile='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt', spectraSignificanceThresh=.05, pathPrefix='',
+	signaturesToIgnore= #ignore signatures we dont care about 
+	set(['Signature.5','Signature.8','Signature.9','Signature.12','Signature.16','Signature.19','Signature.22','Signature.23','Signature.24','Signature.25','Signature.27','Signature.28','Signature.29','Signature.30'])):
+	
+	def filter_entries_by_thresh(spectraDict, thresh): #filters keys for the dictionary sp
+		newDictofSets = {}
+		for key, subDict in spectraDict.items():
+			s = set()
+			for subDictKey, value in subDict.items():
+				if value > thresh:
+					s.add(subDictKey)
+			newDictofSets[key] = s
+		return newDictofSets
+
+
+	d = convert_spectrum_file_to_dict_of_dicts(pathPrefix + spectrumFile)
+	for keyToDrop in signaturesToIgnore:
+		d.pop(keyToDrop, None)
+
+	filteredD = filter_entries_by_thresh(d, spectraSignificanceThresh)
+	filteredD['Signature.MMR'] = filteredD['Signature.6'] | filteredD['Signature.15'] | filteredD['Signature.20'] | filteredD['Signature.21'] | filteredD['Signature.26']
+	filteredD['Signature.APOBEC'] = filteredD['Signature.2'] | filteredD['Signature.13']
+	#pop all the signatures we just combined
+	filteredD.pop('Signature.6'), filteredD.pop('Signature.15'), filteredD.pop('Signature.20'), filteredD.pop('Signature.21'), filteredD.pop('Signature.26'), filteredD.pop('Signature.2'), filteredD.pop('Signature.13') 
+	return filteredD
+
 def annotate_mutations_with_signatures_in_case(outputFilename, outputDir, mutationsFileToAnnotate='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/maf2mafAnnotatedMay16filteredMafWithIsHotspot.maf',
 	signaturesFile='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/mutationSigFiles/may16unfiltered30sigs.txt'
 	):
@@ -214,15 +241,16 @@ def create_limited_spectrum_file(signaturesToInclude, oldSpectrumFile='/ifs/work
 
 #####################UTILITIES FOR MERGING MUTATIONAL SIGNATURE COLUMNS
 
-def merge_signature_columns(df, mode='Stratton'):
+def merge_signature_columns(df, mode='Stratton', confidence=True, mean=True):
 	if mode == 'Stratton':
-		df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
-		df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
-		df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_21'], row['confidence_26']), axis=1)
-		df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['mean_20'] + row['mean_21'] + row['mean_26'], axis=1)	
-		df = df.drop(['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_21', 'confidence_26',
-			'mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26'
-			], axis=1)
+		if confidence: df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
+		if mean: df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
+		if confidence: df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_21'], row['confidence_26']), axis=1)
+		if mean: df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['mean_20'] + row['mean_21'] + row['mean_26'], axis=1)	
+		dropCols = []
+		if mean: dropCols += ['mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26']
+		if confidence: dropCols += ['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_21', 'confidence_26']
+		df = df.drop(dropCols, axis=1)
 		return df
 
 	#TODO implement mean merges for SBS mode
@@ -270,6 +298,35 @@ def get_dominant_signature(rowAsDict, cols=None):
 	return sortedSigs[0][0]
 
 	#TODO return magnitude etc to help with classification
+
+#a rowwise function to find the second most common signature in a case
+def find_second_most_common_signature(row, primarySig, returnMode, 
+                            sigNamesToSpecify = set(['mean_1', 'mean_3', 'mean_4', 'mean_7', 'mean_10', 'mean_11','mean_14', 'mean_17', 'mean_MMR', 'mean_APOBEC']) #a set of signatures we actually mark on the chart
+                            ):
+    colNames = row.to_dict().keys()
+    signatureColumns = [i for i in list(row.keys()) if 'mean' in i]
+    rowSigsOnly = row[signatureColumns]
+    rowAsDict = rowSigsOnly.to_dict()
+    items = rowAsDict.items()
+    sortedItems = sorted(items, key=lambda x: x[1], reverse=True)
+    if sortedItems[0][0] == primarySig:
+        if returnMode == 'name':
+            sigName = sortedItems[1][0]
+            if sigName in sigNamesToSpecify:
+                return sigName
+            else:
+                return 'other'
+        else:
+            return sortedItems[1][1]
+    else:
+        if returnMode == 'name':
+            sigName = sortedItems[0][0]
+            if sigName in sigNamesToSpecify:
+                return sigName
+            else:
+                return 'other' 
+        else:
+            return sortedItems[0][1]
 
 def main():
 
