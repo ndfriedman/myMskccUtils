@@ -26,6 +26,7 @@ generate_ggplot_bar <- function(df, title, hideLegend = TRUE) {
                         fill=factor(signatureName, levels=c("Other", "signature_APOBEC", "Smoking", 'signature_UV', 'signature_POLE', "signature_MMR/MSI", "Age",  "Brca")))) + #order bar charts how I want 
     geom_bar(stat = "identity")+
     scale_fill_manual(values=barColorPalette) +
+    get_adjusted_theme()+
     theme( #rotate axes, change size
       axis.title.x=element_blank(), #make there be no x title
       axis.title.y=element_text(size=4),
@@ -51,6 +52,23 @@ generate_ggplot_bar <- function(df, title, hideLegend = TRUE) {
   return(plt)
 }
 
+get_adjusted_theme <- function(){
+  return(
+    theme( #rotate axes, change size
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.border = element_blank(),
+      panel.background = element_blank(),
+      #axis.line = element_line(colour = 'black', size = 1),
+      axis.title.x=element_blank(), #make there be no x title
+      axis.title.y=element_text(size=2),
+      legend.title=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y = element_text(size=2,angle=45, hjust=1))
+    )
+}
+
 get_empty_theme <- function(){
   return(
     theme( #rotate axes, change size
@@ -72,7 +90,7 @@ make_bar_comparison <- function(df,
                                 mainColor="#FF0000", coloringSpecCols, barColorPalette, #used for coloring the bar chart
                                 title,  hideLegend = TRUE, textSize=1) {
   #first make the ordering column before any of the rest of this bullshit
-  df$orderingVal <-df[[orderingValParam]]
+  #df$orderingVal <-df[[orderingValParam]]
   #CHANGE THE DF Columns
   df <- my.rename(df, xAxisValParam, "xAxisVal")
   df <- my.rename(df, yAxisValParam1, "yAxisVal1")
@@ -89,14 +107,15 @@ make_bar_comparison <- function(df,
     fill = factor(yAxisFill, levels=coloringSpecCols) #color the other signature column by which signature it is                                                                                     #levels=c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC')
     ),
     stat = "identity")+
+    ylim(-1,1)+
     
     geom_hline(yintercept=0, color = "black", size=.25)+
     
     scale_fill_manual(values=barColorPalette, drop = FALSE)+ 
-    ggtitle(title)+
+    ggtitle(paste(title, "// n cases: ", nrow(df)))+
+    get_adjusted_theme()+
     theme(plot.title = element_text(size = 5)) +
-    get_empty_theme()
-  #theme(axis.text.x = element_text(angle = 60, hjust = 1, size=textSize))
+    theme(axis.line.x = element_line(color="white", size = 2))
   if(hideLegend == TRUE){
     plt <- plt + theme(legend.position="none")} #kill the legend conditionally based on function params
   else{
@@ -157,22 +176,20 @@ generate_ordered_color_mapping <- function(df){
 }
 
 #TODO fix weirdness for legends in the new way I am doing things
-generate_ggplot_tiles <- function(df, fillArg, hideLegend = TRUE, mode = "cancerTypeTiles", textSizeParam=1) {
-  tileColorPalette <- NULL 
-  if(mode == "cancerTypeTiles"){
-    tileColorPalette = generate_ordered_color_mapping(df)  
-  }
-  if(mode == "allelicStatus"){
-    tileColorPalette = c("#0000FF", "#CCCCFF", "#FF9933", "#FFCCCC", "#E6E6E6")
-  }
-  if(mode == "brca"){
-    tileColorPalette = c("#D3D3D3", "#98FB98", "#008000")
-  }
+generate_ggplot_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArgParam, hideLegend = TRUE, mode = "cancerTypeTiles", textSizeParam=1,tileColorPalette, orderSpecCols) {
+  
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+  df <- my.rename(df, fillArgParam, "fillArg")
+  
   textSize <- textSizeParam
-  plt <- ggplot(df, aes(x = reorder(dmp_sample, -brca_signature), y=0)) + 
-    geom_tile(aes_string(fill=fillArg,
+  
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0)) + 
+    geom_tile(aes(
+                        #fill=fillArg,
+                         fill= factor(fillArg, levels=orderSpecCols),
                          width=0.7, height=0.7), size=5)+
-    scale_fill_manual(values=tileColorPalette) +
+    scale_fill_manual(values=tileColorPalette, drop = FALSE) +
     theme(
       axis.text.y=element_blank(), #try to remove everything to make it a pure geometric shape
       axis.title.x=element_blank(),
@@ -196,12 +213,29 @@ generate_ggplot_tiles <- function(df, fillArg, hideLegend = TRUE, mode = "cancer
     plt <- plt+ theme(legend.text=element_text(size=4),
                       legend.title = element_text(size=5))+
       guides(color = guide_legend(override.aes = list(size=.1)))+
-      guides(fill=guide_legend(title=fillArg))
+      guides(fill=guide_legend(title=fillArgParam))
   }
-  plt <- plt + labs(y = fillArg)+ 
+  plt <- plt + labs(y = fillArgParam)+ 
     theme(axis.title.y = element_text(angle = 0, size=5))
   return(plt)
 }
+
+generate_gradient_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArgParam, hideLegend = TRUE) {
+    #a function designed to genrate a row of red to blue tiles
+    df <- my.rename(df, xAxisValParam, "xAxisVal")
+    df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+    df <- my.rename(df, fillArgParam, "fillArg")
+    
+    plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0)) + 
+      geom_tile(aes(fill= fillArg,
+                    width=0.7, height=0.7), size=5)+
+      scale_fill_gradient(low = "blue", high = "red")+
+      get_empty_theme()
+    plt <- plt + labs(y = "MSI Score")+ 
+      theme(axis.title.y = element_text(angle = 0, size=5))
+    if(hideLegend == TRUE){plt <- plt + theme(legend.position="none")}
+}
+
 
 my.rename <- function(df, old.name, new.name){ #R SUCKS!!!!!! heres my renaming function cause god forbid there would be an easy or intiuitive way to do this with R
   names(df)[names(df) == old.name] <- new.name 
@@ -214,29 +248,24 @@ generate_mut_burden_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxis
   df <- my.rename(df, xAxisValParam, "xAxisVal")
   df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
   df <- my.rename(df, yAxisValParam, "yAxisVal")
-  df <- my.rename(df, yAxisFillParam, "yAxisFill")
+  #df <- my.rename(df, yAxisFillParam, "yAxisFill")
   
   plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering),
-                        y=yAxisVal, fill=yAxisFill)
+                        y=yAxisVal, fill="#000000")
   )+
     geom_bar(stat = "identity")+
-    #scale_y_log10()+
+    scale_y_log10()+
     scale_fill_manual(values=c("#2F4F4F","#000000"))+
+    get_adjusted_theme()+
     theme(
-      axis.ticks.x=element_blank(), axis.ticks.y=element_blank(),
-      axis.text.x=element_blank(), axis.text.y=element_blank(),
-      axis.title.x=element_blank(),axis.title.y=element_blank(),
-      axis.line = element_blank(),
+      axis.ticks.x=element_blank(), 
+      axis.text.x=element_blank(),
+      axis.title.x=element_blank(),
       panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank())
   theme_bw() +
-    theme(axis.line = element_line(colour = "black"),
-          panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank(),
-          panel.border = element_blank(),
-          panel.background = element_blank())+
-    theme_void()
+    theme(axis.line = element_line(colour = "black"))
   plt <- plt + theme(legend.position="none")
-  plt <- plt + labs(y = "mutation burden")+ 
+  plt <- plt + labs(y = "log mutation burden")+ 
     theme(axis.title.y = element_text(angle = 0, size=5))
   return(plt)
 }
