@@ -94,9 +94,10 @@ make_bar_comparison <- function(df,
                                 mainColor="#FF0000", #the color for the bar of the main signature that goes upwards
                                 coloringSpecCols, barColorPalette, #used for coloring the bar chart
                                 title,  hideLegend = TRUE, textSize=1, 
-                                pointPlotValParam = NA, #parameter for what value to use for ggpoints if we want them
-                                pointPlotSize = NA #parameter for the size of the points if we include them
+                                pointPlotValParam = NA #parameter for what value to use for ggpoints if we want them
                                 ) {
+  
+  pointPlotSize = 20/nrow(df) #parameter for the size of the points if we include them
   #first make the ordering column before any of the rest of this bullshit
   #CHANGE THE DF Columns
   df <- my.rename(df, xAxisValParam, "xAxisVal")
@@ -110,16 +111,14 @@ make_bar_comparison <- function(df,
     
     #The first bar of the predominant signature in the positive direction
     geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=yAxisVal1), stat="identity",fill=mainColor)+
-    
     #The second bar of the second predominant signature in the negative direction
     geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=-yAxisVal2, 
     fill = factor(yAxisFill, levels=coloringSpecCols) #color the other signature column by which signature it is                                                                                     #levels=c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC')
     ),
     stat = "identity")+
-    ylim(-1,1)+
+    ylim(-1,1)+  
     
     geom_hline(yintercept=0, color = "black", size=.25)+
-    
     scale_fill_manual(values=barColorPalette, drop = FALSE)+ 
     ggtitle(paste(title, "// n cases: ", nrow(df)))+
     get_adjusted_theme()+
@@ -137,6 +136,8 @@ make_bar_comparison <- function(df,
   }
   return(plt)
 }
+
+
 
 make_percentage_bar <- function(#makes a bar chart for a 0-100% percentage (ie purity)
                                 df, 
@@ -162,6 +163,8 @@ make_percentage_bar <- function(#makes a bar chart for a 0-100% percentage (ie p
     theme(axis.title.y = element_text(angle = 0))
   return(plt)
 }
+
+
 
 #noob R way to do this
 generate_ordered_color_mapping <- function(df){
@@ -190,30 +193,26 @@ generate_ordered_color_mapping <- function(df){
 #TODO fix weirdness for legends in the new way I am doing things
 #TODO fix the fill arg not found error
 generate_ggplot_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArgParam, hideLegend = TRUE,
-                                  manualColor= TRUE,
                                   mode = "cancerTypeTiles", textSizeParam=1,tileColorPalette=NA, orderSpecCols=NA) {
   
   df <- my.rename(df, xAxisValParam, "xAxisVal")
   df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
   df <- my.rename(df, fillArgParam, "fillArg")
   
-  fillVal = NA
-  if(manualColor == TRUE){
-    print("FML")
-    print(df$fillArg)
-    fillVal = factor(fillArg, levels=orderSpecCols)
-  }
-  else{
-    fillVal = fillArg
-  }
-  
   textSize <- textSizeParam
   
-  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0)) + 
-    geom_tile(aes(
-                         fill= fillVal,
-                         width=0.7, height=0.7), size=5)+
-    theme(
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0)) 
+  if(!is.na(orderSpecCols)){
+    plt <- plt + geom_tile(aes(
+                         fill= factor(fillArg, levels=orderSpecCols),
+                         width=0.7, height=0.7), size=5)
+  }
+  else{
+    plt <- plt + geom_tile(aes(
+      fill= fillArg,
+      width=0.7, height=0.7), size=5)
+  }
+  plt <- plt + theme(
       axis.text.y=element_blank(), #try to remove everything to make it a pure geometric shape
       axis.title.x=element_blank(),
       axis.title.y=element_blank(),
@@ -242,8 +241,8 @@ generate_ggplot_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArg
   }
   plt <- plt + labs(y = fillArgParam)+ 
     theme(axis.title.y = element_text(angle = 0, size=5))
-  if(manualColor == TRUE){
-    plt <- plt + scale_fill_manual(values=tileColorPalette, drop = FALSE)
+  if(!is.na(tileColorPalette)){
+    plt <- plt + scale_fill_brewer(palette=tileColorPalette)
   }
   return(plt)
 }
@@ -331,11 +330,17 @@ plot_panel <- function(df,
                          pointPlotValParam_ = NA,
                          mutBurdenBarParam_=NA,
                          gradientBarParam_=NA, #parameter for gradient bar
-                         tileFillParam_=NA,
-                         tileMode_=NA
+                         tileFillCancerParam_=NA,
+                         cancerTypeColorPalette_=NA, 
+                         tileFillAllelicStatusParam_=NA,
+                         allelicTypeColorPalette_=NA,
+                         tileMode_=NA,
+                         legendMode=FALSE
                          ){
-  
-  panelReturnList <- list() #These lists are returned by the function to build the panel
+  hideLegendParam=TRUE
+  if(legendMode == TRUE){hideLegendParam=FALSE}
+  panelReturnList <- c() #These lists are returned by the function to build the panel
+  returnListCntr <- 1
   hs <- list()
   if(!is.na(barParam1_)){
     compBar <- make_bar_comparison(
@@ -348,10 +353,11 @@ plot_panel <- function(df,
       coloringSpecCols=coloringSpecCols_, barColorPalette=barColorPalette_,
       title=title_,
       mainColor=primaryBarColor_,
-      hideLegend = TRUE,
-      pointPlotValParam = pointPlotValParam_,
-      pointPlotSize = .5) #todo make the point size be a function of df size
-    panelReturnList <- c(panelReturnList, compBar)
+      hideLegend = hideLegendParam,
+      pointPlotValParam = pointPlotValParam_) #todo make the point size be a function of df size
+    if(legendMode == TRUE){panelReturnList[[returnListCntr]] <- get_legend(compBar)}
+    else{panelReturnList[[returnListCntr]] <- compBar}
+    returnListCntr <- returnListCntr + 1
   }
   if(!is.na(mutBurdenBarParam_)){
     mutBurdenBar <- generate_mut_burden_bar(
@@ -360,26 +366,49 @@ plot_panel <- function(df,
       xAxisOrderingParam=orderingValParam_, 
       yAxisValParam=mutBurdenBarParam_,
       yAxisFillParam="#000000") #todo change if theres ever a reason we will be expressing the mut burden bar in different colors
+    panelReturnList[[returnListCntr]] <- mutBurdenBar
+    returnListCntr <- returnListCntr + 1  
   }
   if(!is.na(gradientBarParam_)){
-    generate_gradient_tiles(df, 
+    gradientBar <- generate_gradient_tiles(df, 
                             xAxisValParam=xAxisValParam_, 
                             xAxisOrderingParam=orderingValParam_, 
                             fillArgParam=gradientBarParam_, 
-                            hideLegend = TRUE) 
+                            hideLegend = hideLegendParam) 
+    
+    if(legendMode == TRUE){panelReturnList[[returnListCntr]] <- get_legend(gradientBar)}
+    else{panelReturnList[[returnListCntr]] <- gradientBar}
+    returnListCntr <- returnListCntr + 1
   }
-  if(!is.na(mutBurdenBarParam_)){                    
-    generate_ggplot_tiles(
+  if(!is.na(tileFillAllelicStatusParam_)){                    
+    tileBarAllelic <- generate_ggplot_tiles(
+      df, 
+      xAxisValParam=xAxisValParam_, 
+      xAxisOrderingParam=orderingValParam_,
+      fillArgParam=tileFillAllelicStatusParam_, 
+      hideLegend = hideLegendParam,
+      mode = "brca", 
+      textSizeParam=.5,
+      tileColorPalette=allelicTypeColorPalette_)
+    if(legendMode == TRUE){panelReturnList[[returnListCntr]] <- get_legend(tileBarAllelic)}
+    else{panelReturnList[[returnListCntr]] <- tileBarAllelic}
+    returnListCntr <- returnListCntr + 1
+  }
+  if(!is.na(tileFillCancerParam_)){                    
+    tileBar <- generate_ggplot_tiles(
                           df, 
                           xAxisValParam=xAxisValParam_, 
                           xAxisOrderingParam=orderingValParam_,
-                          fillArgParam=tileFillParam_, 
-                          hideLegend = TRUE,
+                          fillArgParam=tileFillCancerParam_, 
+                          hideLegend = FALSE,
                           mode = "cancerTypeTiles", 
                           textSizeParam=.5,
-                          tileColorPalette=cancerTypeColors,
-                          orderSpecCols=plottingLevelsCancerType) 
+                          tileColorPalette=cancerTypeColorPalette_)
+    if(legendMode == TRUE){panelReturnList[[returnListCntr]] <- get_legend(tileBar)}
+    else{panelReturnList[[returnListCntr]] <- tileBar}
+    returnListCntr <- returnListCntr + 1
   }
+  return(panelReturnList)  
 }
 
 
