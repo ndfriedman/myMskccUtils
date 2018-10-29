@@ -102,7 +102,7 @@ make_bar_comparison <- function(df,
   #CHANGE THE DF Columns
   df <- my.rename(df, xAxisValParam, "xAxisVal")
   df <- my.rename(df, yAxisValParam1, "yAxisVal1")
-  df <- my.rename(df, yAxisValParam2, "yAxisVal2")
+  df <- my.rename(df, yAxisValParam2, "yAxisVal\2")
   df <- my.rename(df, yAxisFillParam, "yAxisFill")
   if(!is.na(pointPlotValParam)){ #rename the parameter for the point plot in the graph
     df <- my.rename(df, pointPlotValParam, "pointPlotVal")
@@ -297,6 +297,31 @@ generate_mut_burden_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxis
   return(plt)
 }
 
+#generates bars like the snp indel comparisson bar
+generate_bars <- function(df, xAxisValParam, xAxisOrderingParam, yAxisValParam){
+  #Rename columns as needed
+  df <- my.rename(df, xAxisValParam, "xAxisVal")
+  df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
+  df <- my.rename(df, yAxisValParam, "yAxisVal")
+  plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering),
+                        y=yAxisVal, fill="#000000")
+  )+
+    geom_bar(stat = "identity")+
+    ylim(0, 1)+
+    get_adjusted_theme()+
+    theme(
+      axis.ticks.x=element_blank(),
+      axis.title.x=element_blank(),
+      axis.text.x = element_text(angle = 60, hjust = 1, size=3),
+      panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank())
+  theme_bw() +
+    theme(axis.line = element_line(colour = "black"))
+  plt <- plt + theme(legend.position="none")
+  plt <- plt + labs(y = "INDEL/SNP Ratio")+ 
+    theme(axis.title.y = element_text(angle = 0, size=5))
+  return(plt)
+}
+
 plot_proportion_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxisValParam, label){
   #Rename columns as needed
   df <- my.rename(df, xAxisValParam, "xAxisVal")
@@ -317,6 +342,8 @@ plot_proportion_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxisValP
 }
 
 
+
+
 plot_panel <- function(df,
                          #parameters for plotting the signature comparisson bars
                          xAxisValParam_=NA,
@@ -333,6 +360,7 @@ plot_panel <- function(df,
                          tileFillCancerParam_=NA,
                          cancerTypeColorPalette_=NA, 
                          tileFillAllelicStatusParam_=NA,
+                         additionalBarParam_=NA,
                          allelicTypeColorPalette_=NA,
                          tileMode_=NA,
                          legendMode=FALSE
@@ -359,6 +387,7 @@ plot_panel <- function(df,
     else{panelReturnList[[returnListCntr]] <- compBar}
     returnListCntr <- returnListCntr + 1
   }
+  
   if(!is.na(mutBurdenBarParam_)){
     mutBurdenBar <- generate_mut_burden_bar(
       df, 
@@ -369,6 +398,7 @@ plot_panel <- function(df,
     panelReturnList[[returnListCntr]] <- mutBurdenBar
     returnListCntr <- returnListCntr + 1  
   }
+  
   if(!is.na(gradientBarParam_)){
     gradientBar <- generate_gradient_tiles(df, 
                             xAxisValParam=xAxisValParam_, 
@@ -380,6 +410,7 @@ plot_panel <- function(df,
     else{panelReturnList[[returnListCntr]] <- gradientBar}
     returnListCntr <- returnListCntr + 1
   }
+  
   if(!is.na(tileFillAllelicStatusParam_)){                    
     tileBarAllelic <- generate_ggplot_tiles(
       df, 
@@ -394,6 +425,16 @@ plot_panel <- function(df,
     else{panelReturnList[[returnListCntr]] <- tileBarAllelic}
     returnListCntr <- returnListCntr + 1
   }
+  
+  if(!is.na(additionalBarParam_)){
+    additonalBar <- generate_bars(df, xAxisValParam=xAxisValParam_, 
+                                  xAxisOrderingParam=orderingValParam_,
+                                  yAxisValParam=additionalBarParam_
+                                  )
+    panelReturnList[[returnListCntr]] <- additonalBar
+    returnListCntr <- returnListCntr + 1
+  }
+  
   if(!is.na(tileFillCancerParam_)){                    
     tileBar <- generate_ggplot_tiles(
                           df, 
