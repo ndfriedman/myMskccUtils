@@ -121,12 +121,15 @@ def subset_triunc_signature_fractions(signature, nucleotides, spectrumFile='/ifs
 
 #UTILITIES FOR ASSIGING mutations to the signature that most likely caused them
 #creates the reference four nucleotide context for signatures
-def create_reference_four_nuc(refTri, refAllele, altAllele):
+
+#df['quadNuc'] = df.apply(lambda row: mutationSigUtils.create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'], row['Variant_Type']), axis=1)
+def create_reference_four_nuc(refTri, refAllele, altAllele, variantType):
 	#properly invert when needed
 	def invert_allele_and_ref_tri(altAllele):
 		nucleotideDict = {'A': 'T', 'G': 'C', 'C':'G', 'T':'A'}
 		return nucleotideDict[altAllele]
 
+	if variantType != 'SNP': return None  #there is no reference trinuc for non snps
 	refTri = str(refTri) #just make sure the ref tri is a string here to avoid funny business
 	refAlleleFromReftri = refTri[1]
 	alt = altAllele
@@ -159,6 +162,27 @@ def assign_most_likely_mutation(spectrumDict, row,
 		return returnL
 	else:
 		return sortedL[:n] #returns the n most ocmmon signatures
+
+#Expands a df to include columns for the probabilities of each spectrum
+#note the signature columns must not yet be combined together at this stage
+def expand_df_to_include_spectrum_probs(df, spectrumDicts, artifSpectra):
+
+	def multiply_function(row, signatureCols, spectrumDs, curTriNuc, artificialSpectra=None):
+		curTriNucSpecDict = {key:val for key,val in [(signatureCols[i], spectrumDs['Signature.' + str(i + 1)][curTriNuc]) for i in range(0,30)]}
+		rowAsDict = row[signatureCols].to_dict() 
+		if row['Nmut'] < 10 and artificialSpectra != None: 
+			rowAsDict = artificialSpectra
+
+		l = [rowAsDict[key]*curTriNucSpecDict[key] for key in rowAsDict.keys()]
+		return sum(l)
+
+	signatureColumns = ['mean_' + str(i) for i in range(1,31)]
+	trinucKeys = spectrumDicts['Signature.1'].keys()
+	
+	for key in trinucKeys:
+		df[key + '_prob'] = df.apply(lambda row: multiply_function(row, signatureColumns, spectrumDicts, key, artifSpectra), axis=1)
+
+	return df
 
 def get_spectrum_probability(spectrumDict, row, dominantSignature):
 	fourNuc = create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'])
@@ -239,16 +263,29 @@ def create_limited_spectrum_file(signaturesToInclude, oldSpectrumFile='/ifs/work
 	print 'writing file to ', writePath
 	spectrumDf.to_csv(writePath, index=True, sep='\t')
 
+#function used for defining hotspot mutation percentage for a cohort
+#multiplies average pan cohort mutation fraction by each of the trinuc contexts
+#then sums all of them
+def get_spectrum_mutation_frac_for_cohort(signatureFracs, spectrumFilePath='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'):
+	spectrumFile = pd.read_table(spectrumFilePath)
+	for i in range(len(signatureFracs)):
+		spectrumFile.iloc[i] = spectrumFile.iloc[i].apply(lambda x: 1.0*x*signatureFracs[i])
+	return spectrumFile.sum(axis=0)
+
 #####################UTILITIES FOR MERGING MUTATIONAL SIGNATURE COLUMNS
 
-def merge_signature_columns(df, mode='Stratton', confidence=True, mean=True):
+def merge_signature_columns(df, mode='Stratton', smokingMerge=False, confidence=True, mean=True):
 	if mode == 'Stratton':
 		if confidence: df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
 		if mean: df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
 		if confidence: df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_21'], row['confidence_26']), axis=1)
 		if mean: df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['mean_20'] + row['mean_21'] + row['mean_26'], axis=1)	
+		if mean:
+			if smokingMerge: #smoking merge, if specified merges the smoking signature, mutyh, aflatoxin and chewing tobacco (which are all usually smoking)
+				df['mean_SMOKING'] = df.apply(lambda row: row['mean_4'] + row['mean_18'] + row['mean_24'] + row['mean_29'], axis=1)
 		dropCols = []
 		if mean: dropCols += ['mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26']
+		if smokingMerge: dropCols += ['mean_4', 'mean_18', 'mean_24', 'mean_29']
 		if confidence: dropCols += ['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_21', 'confidence_26']
 		df = df.drop(dropCols, axis=1)
 		return df
@@ -299,16 +336,37 @@ def get_dominant_signature(rowAsDict, cols=None):
 
 	#TODO return magnitude etc to help with classification
 
+#rowwise lambda function to find hte domniant signaturefor each case
+def find_nth_most_predominant_signature(row, n=1, mode='Name', signaturesToConsider=None):
+	if signaturesToConsider == None:
+		signaturesToConsider = ['mean_1','mean_10', 'mean_11', 'mean_12', 'mean_14', 'mean_16', 'mean_17', 'mean_18', 'mean_19',
+		'mean_22', 'mean_23', 'mean_24', 'mean_25', 'mean_27', 'mean_28','mean_29', 'mean_3', 'mean_30',
+		'mean_4', 'mean_5', 'mean_7', 'mean_8', 'mean_9', 'mean_APOBEC', 'mean_MMR']
+ 	sigs = row[signaturesToConsider]
+ 	sortedTupleList = sorted(list(sigs.to_dict().items()), key=lambda x: x[1], reverse=True)
+ 	if mode == 'Name':
+ 		return sortedTupleList[n-1][0]
+ 	elif mode == 'Magnitude':
+ 		return sortedTupleList[n-1][1]
+
 #a rowwise function to find the second most common signature in a case
 def find_second_most_common_signature(row, primarySig, returnMode, 
-                            sigNamesToSpecify = set(['mean_1', 'mean_3', 'mean_4', 'mean_7', 'mean_10', 'mean_11','mean_14', 'mean_17', 'mean_MMR', 'mean_APOBEC']) #a set of signatures we actually mark on the chart
+                            sigNamesToSpecify = set(['mean_1', 'mean_3', 'mean_4', 'mean_7', 'mean_10', 'mean_11','mean_14', 'mean_17', 'mean_MMR', 'mean_APOBEC']), #a set of signatures we actually mark on the chart
+                            signatureColumns=None
                             ):
     colNames = row.to_dict().keys()
-    signatureColumns = [i for i in list(row.keys()) if 'mean' in i]
+    if signatureColumns == None: signatureColumns = [i for i in list(row.keys()) if 'mean' in i]
+
     rowSigsOnly = row[signatureColumns]
     rowAsDict = rowSigsOnly.to_dict()
     items = rowAsDict.items()
     sortedItems = sorted(items, key=lambda x: x[1], reverse=True)
+
+    l = [list(t) for t in zip(*sortedItems)][1]
+    if sum(l) > 1.1: 
+    	print sum(l), sortedItems
+    	print '______________________'
+
     if sortedItems[0][0] == primarySig:
         if returnMode == 'name':
             sigName = sortedItems[1][0]
@@ -324,6 +382,7 @@ def find_second_most_common_signature(row, primarySig, returnMode,
             if sigName in sigNamesToSpecify:
                 return sigName
             else:
+            	#return sortedItems[0][0]
                 return 'other' 
         else:
             return sortedItems[0][1]
