@@ -68,7 +68,6 @@ def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman
 	d = dict(zip(cancerTypeDf['#Sample Identifier'], cancerTypeDf['Cancer Type']))
 	return d
 
-
 #SIGNATURE SPECIFIC ANALYSIS UTILS #############################################################
 
 #util to give the top N most epxressed signatures:
