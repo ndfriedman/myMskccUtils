@@ -40,6 +40,14 @@ def make_kaplan_meier_plots(dfs):
 
 #INFORMATION FUNCTIONS ##################################################
 
+#little utility for normalizing a counter
+def normalize_counter(cntrObj, nDigitsRound=2):
+	total = sum(cntrObj.values(), 0.0)
+	for key in cntrObj:
+		cntrObj[key] /= total
+		cntrObj[key] = round(cntrObj[key], nDigitsRound)
+	return cntrObj
+
 #returns the mean value of a column specified by colname
 def get_mean_of_df_col(df, colname, idColumn = 'Tumor_Sample_Barcode'):
 	df = df.drop_duplicates(subset=[idColumn])
@@ -77,165 +85,6 @@ def get_n_top_signatures(row, n=2):
 	l = list(row)
 	return list(reversed([str(i + 1) + ':' + str(l[i]) for i in np.argsort(l)[-n:]])) #I plus one to take into account the signatures ordering
 
-
-#Conditionals for identifying mutations from specific signatures
-
-#extract
-def get_sig_17_pink_peak_muts(df, mode=True):
-	if mode:
-		return df[
-		(df['Ref_Tri'] == 'CTT') #always the ref tri has to be 'CTT' (which implicitly includes 'ACC' as well) for sig 17 pink peak
-		& (
-		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-		)
-		]
-
-	else: 
-		return df[~ #NOT!
-		(
-		(df['Ref_Tri'] == 'CTT') #always the ref tri has to be 'CTT' (which implicitly includes 'ACC' as well) for sig 17 pink peak
-		& (
-		((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-		| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-		)
-		)
-		]
-
-def get_tcga_sig_17_muts(df, mode=True):
-	if mode:
-		return df[
-			(
-			(df['Ref_Tri'] == 'CTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'ATT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'GTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'TTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-		]
-
-	else:
-		return df[~ #NOT!!!
-			(
-			(
-			(df['Ref_Tri'] == 'CTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'ATT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'GTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'TTT') 
-			& (
-			((df['Reference_Allele'] == 'T') & (df['Tumor_Seq_Allele2'] == 'G')) # given the ref tri context, they can be T > G
-			| ((df['Reference_Allele'] == 'A') & (df['Tumor_Seq_Allele2'] == 'C')) #or they can be A>C
-			)
-			)
-			)
-		]		
-
-def get_pole_mutations(df, mode=True): #note lazy way just gets the big peaks
-	
-	if mode:
-	
-		return df[
-			(
-			(
-			(df['Ref_Tri'] == 'TCT') 
-			& (
-			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
-			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'TCG') 
-			& (
-			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
-			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
-			)
-			)
-			)
-			]
-
-	else:
-	
-		return df[~
-			(
-			(
-			(df['Ref_Tri'] == 'TCT') 
-			& (
-			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'A')) 
-			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'T')) 
-			)
-			)
-
-			|
-
-			(
-			(df['Ref_Tri'] == 'TCG') 
-			& (
-			((df['Reference_Allele'] == 'C') & (df['Tumor_Seq_Allele2'] == 'T')) 
-			| ((df['Reference_Allele'] == 'G') & (df['Tumor_Seq_Allele2'] == 'A')) 
-			)
-			)
-			)
-			]
 
 
 
