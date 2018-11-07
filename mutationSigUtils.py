@@ -274,21 +274,22 @@ def get_spectrum_mutation_frac_for_cohort(signatureFracs, spectrumFilePath='/ifs
 
 #####################UTILITIES FOR MERGING MUTATIONAL SIGNATURE COLUMNS
 
-def merge_signature_columns(df, mode='Stratton', smokingMerge=False, confidence=True, mean=True):
+def merge_signature_columns(df, mode='Stratton', drop=True, smokingMerge=False, confidence=True, mean=True, prefix='mean_'):
 	if mode == 'Stratton':
 		if confidence: df['confidence_APOBEC'] = df.apply(lambda row: max(row['confidence_2'], row['confidence_13']), axis=1)
-		if mean: df['mean_APOBEC'] = df.apply(lambda row: row['mean_2'] + row['mean_13'], axis=1)
+		if mean: df[prefix + 'APOBEC'] = df.apply(lambda row: row[prefix + '2'] + row[prefix + '13'], axis=1)
 		if confidence: df['confidence_MMR'] = df.apply(lambda row: max(row['confidence_6'], row['confidence_15'], row['confidence_20'], row['confidence_21'], row['confidence_26']), axis=1)
-		if mean: df['mean_MMR'] = df.apply(lambda row: row['mean_6'] + row['mean_15'] + row['mean_20'] + row['mean_21'] + row['mean_26'], axis=1)	
+		if mean: df[prefix + 'MMR'] = df.apply(lambda row: row[prefix + '6'] + row[prefix + '15'] + row[prefix + '20'] + row[prefix + '21'] + row[prefix + '26'], axis=1)	
 		if mean:
 			if smokingMerge: #smoking merge, if specified merges the smoking signature, mutyh, aflatoxin and chewing tobacco (which are all usually smoking)
-				df['mean_SMOKING'] = df.apply(lambda row: row['mean_4'] + row['mean_18'] + row['mean_24'] + row['mean_29'], axis=1)
+				df[prefix + 'SMOKING'] = df.apply(lambda row: row[prefix + '4'] + row[prefix + '18'] + row[prefix + '24'] + row[prefix + '29'], axis=1)
 		dropCols = []
-		if mean: dropCols += ['mean_2', 'mean_13', 'mean_6', 'mean_15', 'mean_20', 'mean_21', 'mean_26']
-		if smokingMerge: dropCols += ['mean_4', 'mean_18', 'mean_24', 'mean_29']
+		if mean: dropCols += [prefix + '2', prefix + '13', prefix + '6', prefix + '15', prefix + '20', prefix + '21', prefix + '26']
+		if smokingMerge: dropCols += [prefix + '4', prefix + '18', prefix + '24', prefix + '29']
 		if confidence: dropCols += ['confidence_2', 'confidence_13', 'confidence_6', 'confidence_15', 'confidence_20', 'confidence_21', 'confidence_26']
-		df = df.drop(dropCols, axis=1)
-		return df
+		if drop: #drop cols if asked
+			df = df.drop(dropCols, axis=1)
+		return df 
 
 	#TODO implement mean merges for SBS mode
 	elif mode == 'SBS':
