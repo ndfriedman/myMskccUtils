@@ -78,7 +78,7 @@ def summarize_per_case_mutation_info_for_mafs(mafDf):
 
 	return pd.DataFrame(listOfDicts)
 
-#a function that enumerates all activating mutations in a gene across the cohort
+#a function that enumerates all activating mutations in a gene across a cohort maf
 def enumerate_activating_muts_across_cohort(gene, mafDf = None):
 
 	#TODO appropriately allow the user to load the maf df if there is no default
@@ -88,8 +88,86 @@ def enumerate_activating_muts_across_cohort(gene, mafDf = None):
 	oncogenicMutColNames = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
 	geneOncogenicOrHotspotMuts = mafDf[(mafDf['Hugo_Symbol'] == gene) &((mafDf['is-a-hotspot'] == 'Y') |(mafDf['oncogenic'].isin(oncogenicMutColNames)))]
 
-	colsToKeep = ['Tumor_Sample_Barcode', 'is-a-hotspot', 'oncogenic', 'Ref_Tri', 'Tumor_Seq_Allele2', 'Reference_Allele']
-	return geneOncogenicOrHotspotMuts[[colsToKeep]]
+	#colsToKeep = ['Tumor_Sample_Barcode', 'is-a-hotspot', 'oncogenic', 'Ref_Tri', 'Tumor_Seq_Allele2', 'Reference_Allele']
+	#return geneOncogenicOrHotspotMuts[[colsToKeep]]
+	return geneOncogenicOrHotspotMuts
+
+#a function that given a maf of mutaitons and quadnuc spectra enriched for a signature returns the number of mutations that occur at the enriched spectra
+def summarize_signature_attribution_for_case(mafDf, enrichedSigMotifs):
+	oncogenicMutColNames = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
+
+	listOfDicts = []
+	cases = set(mafDf['Tumor_Sample_Barcode'])
+	for case in cases:
+		localD = {}
+		caseDf = mafDf[mafDf['Tumor_Sample_Barcode'] == case]
+
+		#get a maf for the current cases hotspot and oncogenic muts 
+		hotspotMutDf = caseDf[caseDf['is-a-hotspot'] == 'Y']
+		oncogenicMutDf = caseDf[caseDf['oncogenic'].isin(oncogenicMutColNames)]
+		nHotspotMutations = hotspotMutDf.shape[0]
+		nOncogenicMutations = oncogenicMutDf.shape[0]
+
+		#get data about how many of each occurs at a motif
+		nOncogenicMutationsAtEnrichedMotif = oncogenicMutDf[oncogenicMutDf['quadNuc'].isin(enrichedSigMotifs)].shape[0]
+		nHotpsotMutationsAtEnrichedMotif = hotspotMutDf[hotspotMutDf['quadNuc'].isin(enrichedSigMotifs)].shape[0]
+		nMut = caseDf.shape[0]
+
+		#append info to the local dictionary (row of the future df)
+		localD['Tumor_Sample_Barcode'] = case
+		localD['nHotspots'] = nHotspotMutations
+		localD['Nmut'] = nMut
+		localD['nOncogenicMutations'] = nOncogenicMutations
+		localD['nOncogenicMutationsAtEnrichedMotif'] = nOncogenicMutationsAtEnrichedMotif
+		localD['nHotpsotMutationsAtEnrichedMotif'] = nHotpsotMutationsAtEnrichedMotif  
+
+		listOfDicts.append(localD)
+
+	df = pd.DataFrame(listOfDicts)
+	return df      
+
+#returns a dataframe with the cases that have mutations in a gene and the type of mutation in that gene
+#note the way we return it is designed for the R long format
+def asses_per_case_mut_info_for_gene(mafDf, gene, quadnucSet):
+
+	def classify_mut_residue_data(quadNucs, qNucSet):
+		mutType = None
+		if len(quadNucs) == 1: #if there is only one quadnuc mutation figure out which type it is
+			v = quadNucs.pop()
+			if v in qNucSet: return 'favoredMutation'
+			else: return 'notFavoredMutation'
+		else: #if there are more than one mutations in the gene we need to classify whether the mutations are mixed, from the favored process only or from both
+			nFavoredMutations = 0
+			nNotFavoredMutations = 0
+			for v in quadNucs:
+				if v in qNucSet:
+					nFavoredMutations += 1
+				else:
+					nNotFavoredMutations += 1
+				if nFavoredMutations >= 1 and nNotFavoredMutations >= 1:
+					return 'mixed'
+				elif nFavoredMutations >= 1:
+					return 'mutlipleFavoredMutation'
+				else:
+					return 'multipleNotFavoredMutation'
+
+	cases = set(mafDf['Tumor_Sample_Barcode'])
+	geneMuts = mafDf[mafDf['Hugo_Symbol'] == gene]
+	#we only put information in the dataframe we return if there are snp muts
+	listOfDicts = []
+	for case in cases:
+		caseMuts = geneMuts[geneMuts['Tumor_Sample_Barcode'] == case]
+		caseQuadNucs = set(caseMuts['quadNuc'])
+		if len(caseQuadNucs) != 0:
+			if None not in caseQuadNucs:
+				classification = classify_mut_residue_data(caseQuadNucs, quadnucSet)
+				localD = dict()
+				localD['gene'] = gene
+				localD['Tumor_Sample_Barcode'] = case
+				localD['mutClassification'] = classification
+				localD['nGeneMut'] = len(caseQuadNucs)
+				listOfDicts.append(localD)
+	return pd.DataFrame(listOfDicts)
 
 def main():
 
