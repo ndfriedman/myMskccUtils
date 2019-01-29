@@ -11,6 +11,21 @@ import scipy.stats
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
 
+
+
+
+########USEFUL code area
+
+#SET UP IMPACT SIGNATURES INFORMATION
+"""impactSigs = pd.read_table(pathPrefix + '/ifs/res/taylorlab/impact_sigs/mixedpact_data_mutations_unfiltered.sigs.tab.txt')
+impactSigs['pid'] = impactSigs['Tumor_Sample_Barcode'].apply(lambda x: x[:9])
+cDict = analysis_utils.get_cancer_type_information(cancerTypeDfPath = pathPrefix +'/ifs/work/taylorlab/friedman/dmp/mskimpact/data_clinical_sample.txt')
+impactSigs['cancer_type'] = impactSigs['pid'].apply(lambda x: cDict[x] if x in cDict else None)""" 
+
+
+
+
+
 #KAPLAN MEIER ANALYSIS
 
 def test_significance(df1, df2):
@@ -40,12 +55,12 @@ def make_kaplan_meier_plots(dfs):
 
 #INFORMATION FUNCTIONS ##################################################
 
-#little utility for normalizing a counter
-def normalize_counter(cntrObj, nDigitsRound=2):
+#TODO ---put this in analysis utils
+def normalize_counter(cntrObj, mode='Round', nDigitsRound=2):
 	total = sum(cntrObj.values(), 0.0)
 	for key in cntrObj:
 		cntrObj[key] /= total
-		cntrObj[key] = round(cntrObj[key], nDigitsRound)
+		if mode == 'Round': cntrObj[key] = round(cntrObj[key], nDigitsRound)
 	return cntrObj
 
 #returns the mean value of a column specified by colname
@@ -69,7 +84,7 @@ def get_age_information(ageInformationPath = '/ifs/work/taylorlab/friedman/msk-i
 	d = dict(zip(ageDf['PATIENT_ID'], ageDf['AGE']))
 	return d
 
-def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/msk-impact/msk-impact/data_clinical_sample.txt', mode='pid'):
+def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/dmp/mskimpact/data_clinical_sample.txt', mode='pid'):
 	cancerTypeDf = pd.read_table(cancerTypeDfPath)
 	if mode == 'pid':
 		cancerTypeDf['#Sample Identifier'] = cancerTypeDf['#Sample Identifier'].apply(lambda x: x[:9])
@@ -83,6 +98,11 @@ def get_gene_length_info(bedFilePath = '/ifs/res/pwg/data/gencode/gencode.v19.al
 	bedDf = bedDf[bedDf['OR4F5'].isin(impactGenes)]
 	bedDf['geneLength'] = bedDf.apply(lambda row: row['70008'] - row['69090'], axis=1)
 	return dict(zip(bedDf['OR4F5'], bedDf['geneLength']))
+
+#returns a dictionary mapping each gene in impact to the size of the cds targeted by the panel
+def get_cds_size_targeted_by_impact(infoFilePath = '/ifs/work/taylorlab/friedman/myAdjustedDataFiles/impact_gene_reference_signatures.tsv'):
+	df = pd.read_table(infoFilePath)
+	return dict(zip(df['Hugo_Symbol'], df['cds_length']))
 
 #SIGNATURE SPECIFIC ANALYSIS UTILS #############################################################
 
