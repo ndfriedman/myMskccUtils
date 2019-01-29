@@ -53,6 +53,19 @@ def add_hotspot_maf_info_to_df(df, mafDf,
 	return df
 
 
+#a utility function that we use to add a column to a dataframe that summarizes True/False for the column X which is true if its hotspot/oncogenic/truncating
+def add_mut_effect_summary_col(mafDf):
+	oncogenicMutColNames = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
+	mafDf['mutKnowOncogenicOrTruncating'] = mafDf.apply(lambda row: 
+		True if row['is-a-hotspot'] == 'Y'
+		else True if row['oncogenic'] in oncogenicMutColNames
+		else True if row['Consequence'] == 'stop_gained'
+		else True if row['Consequence'] == 'frameshift_variant' #TODO is this something that should be included
+		else False, 
+		axis=1)
+	return mafDf
+
+
 def summarize_per_case_mutation_info_for_mafs(mafDf):
 	oncoKbOncogenicAnnotations = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
 	listOfDicts = []
@@ -67,8 +80,14 @@ def summarize_per_case_mutation_info_for_mafs(mafDf):
 		nHotspotMuts = caseDf[caseDf['is-a-hotspot'] == 'Y'].shape[0]
 		nActivatingMutations = caseDf[(caseDf['is-a-hotspot'] == 'Y') | (caseDf['oncogenic'].isin(oncoKbOncogenicAnnotations))].shape[0]
 		nMut = caseDf.shape[0]
+		snpsOnly = caseDf[caseDf['Variant_Type'] == 'SNP']
+		nSnps = snpsOnly.shape[0]
+		nOncogenicSnps = snpsOnly[snpsOnly['oncogenic'].isin(oncoKbOncogenicAnnotations)].shape[0]
 
+		localDict['Tumor_Sample_Barcode'] = case
 		localDict['Nmut'] = nMut
+		localDict['NSnps'] = nSnps
+		localDict['nOncogenicSnps'] = nOncogenicSnps
 		localDict['nOncogenicMuts'] = nOncogenicMuts
 		localDict['nHotspotMuts'] = nHotspotMuts
 		localDict['nActivatingMutations'] = nActivatingMutations
@@ -168,6 +187,59 @@ def asses_per_case_mut_info_for_gene(mafDf, gene, quadnucSet):
 				localD['nGeneMut'] = len(caseQuadNucs)
 				listOfDicts.append(localD)
 	return pd.DataFrame(listOfDicts)
+
+#a utility that asseses the SNP burden for each case
+def asses_snp_burden_across_cohort(maf):
+	cases = set(maf['Tumor_Sample_Barcode'])
+	cntr = 0
+	listOfDicts = []
+	for case in cases:
+		if cntr%500 == 0: print cntr, len(cases)
+		localDict = dict()
+		cntr += 1
+
+		caseMuts = maf[maf['Tumor_Sample_Barcode'] == case]
+		caseSnps = caseMuts[caseMuts['Variant_Type'] == 'SNP']
+		caseIndels = caseMuts[(caseMuts['Variant_Type'] == 'INS') | (caseMuts['Variant_Type'] == 'DEL')]
+		localDict['Tumor_Sample_Barcode'] = case
+		localDict['nSnps'] = caseSnps.shape[0]
+		localDict['nIndels'] = caseIndels.shape[0]
+		localDict['nMuts'] = caseMuts.shape[0]
+		listOfDicts.append(localDict)
+
+	return pd.DataFrame(listOfDicts)
+
+#a utility function that enumerates the top N genes with the most oncogenic mutations in distinct samples
+#also enumerates fraction of cases with muts in each case
+#returns three things:
+#i. A counter of N cases with oncogenic muts
+#ii. A dict with gene name: cohort ranking
+#iii. A dict mapping gene to fraction of cohort with an oncogenic mutation in that case
+def enumerate_top_n_oncogenic_mutated_genes_across_cohort(cohortMaf, n=None):
+	oncoKbOncogenicAnnotations = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
+	oncogenicMutations = cohortMaf[cohortMaf['oncogenic'].isin(oncoKbOncogenicAnnotations)]
+	oncogenicMutations['patientGeneMutated'] = oncogenicMutations.apply(lambda row: row['pid'] + '_' + row['Hugo_Symbol'], axis=1)
+	oncogenicMutationsSansPatientDuplicates = oncogenicMutations.drop_duplicates(subset=['patientGeneMutated']) #NOTE this analysis isnt perfect as it treats independent primaries as genetically related
+	
+	nPatients = len(set(cohortMaf['pid']))	
+	occurenceCounter = None
+	if n!= None:
+		occurenceCounter = Counter(oncogenicMutationsSansPatientDuplicates['Hugo_Symbol']).most_common(n)
+	else:
+		occurenceCounter = Counter(oncogenicMutationsSansPatientDuplicates['Hugo_Symbol']).most_common()
+
+	fractionalDict = {key: value for (key, value) in occurenceCounter}
+	for key, value in fractionalDict.items():
+		fractionalDict[key] = 1.0*value/nPatients
+
+	rankingDict = dict()
+	cntr = 1 #counter is 1 indexed is that a problem
+	for gene in occurenceCounter:
+		rankingDict[gene[0]] = cntr
+		cntr += 1
+
+	return occurenceCounter, rankingDict, fractionalDict
+
 
 def main():
 
