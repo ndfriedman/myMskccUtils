@@ -356,7 +356,9 @@ def find_second_most_common_signature(row, primarySig, returnMode,
                             signatureColumns=None
                             ):
     colNames = row.to_dict().keys()
-    if signatureColumns == None: signatureColumns = [i for i in list(row.keys()) if 'mean' in i]
+    if signatureColumns == None:
+    	signatureColumns = [i for i in list(row.keys()) if 'mean' in i]
+    	if len(signatureColumns) == 0: signatureColumns = [i for i in list(row.keys()) if 'Signature' in i]
 
     rowSigsOnly = row[signatureColumns]
     rowAsDict = rowSigsOnly.to_dict()
