@@ -54,8 +54,12 @@ def create_double_mutation_summary_vanilla_maf(maf, genes=None):
 	cntr = 0
 
 	for case in cases:
-		if cntr %10 == 0: print 'working on ', cntr, 'th case'
+		if cntr %10 == 0: print 'working on ', cntr, 'th case | out of ', len(cases), ' cases'
 		cntr += 1
+		nGenesDoubleMutPerCase = 0
+		nGenesDoubleWithOncogenicPerCase = 0
+		nGenesDoubleOncogenicPerCase = 0
+
 		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
 		hypermutationStatus = caseMaf['isHypermutator'].iloc[0]
 		curDict = {'Tumor_Sample_Barcode': case, 'isHypermutator': hypermutationStatus}
@@ -64,8 +68,8 @@ def create_double_mutation_summary_vanilla_maf(maf, genes=None):
 			nGeneMuts = geneCaseInfo.shape[0]
 
 			#LOGIC CASCADES TO UNDERSTAND FEATURES OF DOUBLE MUTATIONS
-
-			if nGeneMuts < 1:
+			if nGeneMuts < 2:
+				nGenesDoubleMutPerCase += 1
 				curDict[gene + '_double'] = False
 				curDict[gene + '_doubleWithOncogenic'] = False
 				curDict[gene + '_doubleOncogenic'] = False
@@ -77,11 +81,18 @@ def create_double_mutation_summary_vanilla_maf(maf, genes=None):
 					curDict[gene + '_doubleWithOncogenic'] = False
 					curDict[gene + '_doubleOncogenic'] = False
 				else:
+					nGenesDoubleWithOncogenicPerCase += 1
 					curDict[gene + '_doubleWithOncogenic'] = True
 					if nOncogenicMuts == 1:
 						curDict[gene + '_doubleOncogenic'] = False
 					else:
+						nGenesDoubleOncogenicPerCase += 1
 						curDict[gene + '_doubleOncogenic'] = True
+
+		#ADD full case summaries for the total number of gene muts
+		curDict['nGenesDoubleMutPerCase'] = nGenesDoubleMutPerCase
+		curDict['nGenesDoubleWithOncogenicPerCase'] = nGenesDoubleWithOncogenicPerCase
+		curDict['nGenesDoubleOncogenicPerCase'] = nGenesDoubleOncogenicPerCase
 		listOfDicts.append(curDict)
 
 	sumamryDf = pd.DataFrame(listOfDicts)
