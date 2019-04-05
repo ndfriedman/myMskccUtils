@@ -74,7 +74,7 @@ get_empty_theme <- function(){
   return(
     theme( #rotate axes, change size
       axis.title.x=element_blank(), #make there be no x title
-      axis.title.y=element_text(size=4),
+      #axis.title.y=element_text(size=4),
       legend.title=element_blank(),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
@@ -102,17 +102,18 @@ make_bar_comparison <- function(df,
   #CHANGE THE DF Columns
   df <- my.rename(df, xAxisValParam, "xAxisVal")
   df <- my.rename(df, yAxisValParam1, "yAxisVal1")
-  df <- my.rename(df, yAxisValParam2, "yAxisVal\2")
+  df <- my.rename(df, yAxisValParam2, "yAxisVal2")
   df <- my.rename(df, yAxisFillParam, "yAxisFill")
+  df <- my.rename(df, orderingValParam, "orderingV")
   if(!is.na(pointPlotValParam)){ #rename the parameter for the point plot in the graph
     df <- my.rename(df, pointPlotValParam, "pointPlotVal")
   }
   plt <- ggplot(df)+
     
     #The first bar of the predominant signature in the positive direction
-    geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=yAxisVal1), stat="identity",fill=mainColor)+
+    geom_bar(aes(x = reorder(xAxisVal, -orderingV), y=yAxisVal1), stat="identity",fill=mainColor)+
     #The second bar of the second predominant signature in the negative direction
-    geom_bar(aes(x = reorder(xAxisVal, -orderingVal), y=-yAxisVal2, 
+    geom_bar(aes(x = reorder(xAxisVal, -orderingV), y=-yAxisVal2, 
     fill = factor(yAxisFill, levels=coloringSpecCols) #color the other signature column by which signature it is                                                                                     #levels=c('brca', 'Age', 'signature_MMR/MSI', 'signature_UV', 'signature_POLE', 'Smoking', 'signature_5', 'signature_8', 'other', 'signature_APOBEC')
     ),
     stat = "identity")+
@@ -122,7 +123,7 @@ make_bar_comparison <- function(df,
     scale_fill_manual(values=barColorPalette, drop = FALSE)+ 
     ggtitle(paste(title, "// n cases: ", nrow(df)))+
     get_adjusted_theme()+
-    theme(plot.title = element_text(size = 5)) +
+    theme(plot.title = element_text(size = 25)) +
     theme(axis.line.x = element_line(color="white", size = 2))
   if(hideLegend == TRUE){
     plt <- plt + theme(legend.position="none")} #kill the legend conditionally based on function params
@@ -199,6 +200,8 @@ generate_ggplot_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArg
   df <- my.rename(df, xAxisOrderingParam, "xAxisOrdering")
   df <- my.rename(df, fillArgParam, "fillArg")
   
+  print(tileColorPalette)
+  
   textSize <- textSizeParam
   
   plt <- ggplot(df, aes(x = reorder(xAxisVal, -xAxisOrdering), y=0)) 
@@ -241,9 +244,11 @@ generate_ggplot_tiles <- function(df, xAxisValParam, xAxisOrderingParam, fillArg
   }
   plt <- plt + labs(y = fillArgParam)+ 
     theme(axis.title.y = element_text(angle = 0, size=5))
-  if(!is.na(tileColorPalette)){
-    plt <- plt + scale_fill_brewer(palette=tileColorPalette)
-  }
+  #ALERT please change
+  plt<- plt+scale_fill_manual(values = c("red", "green", "blue", "purple", "black", "gray"))
+  #if(!is.na(tileColorPalette)){
+  #  plt <- plt + scale_fill_brewer(palette=tileColorPalette)
+  #}
   return(plt)
 }
 
@@ -283,17 +288,18 @@ generate_mut_burden_bar <- function(df, xAxisValParam, xAxisOrderingParam, yAxis
     geom_bar(stat = "identity")+
     scale_y_log10()+
     scale_fill_manual(values=c("#2F4F4F","#000000"))+
-    get_adjusted_theme()+
+    #get_adjusted_theme()+
     theme(
-      axis.ticks.x=element_blank(), 
-      axis.text.x=element_blank(),
-      axis.title.x=element_blank(),
+      #axis.ticks.x=element_blank(), 
+      #axis.text.x=element_blank(),
+      #axis.title.x=element_blank(),
+      axis.text.x = element_text(angle = 60, hjust = 1, size=10),
       panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank())
   theme_bw() +
     theme(axis.line = element_line(colour = "black"))
   plt <- plt + theme(legend.position="none")
   plt <- plt + labs(y = "log mutation burden")+ 
-    theme(axis.title.y = element_text(angle = 0, size=5))
+    theme(axis.title.y = element_text(angle = 90, size=15))
   return(plt)
 }
 
