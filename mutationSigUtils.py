@@ -130,6 +130,8 @@ def create_reference_four_nuc(refTri, refAllele, altAllele, variantType):
 		return nucleotideDict[altAllele]
 
 	if variantType != 'SNP': return None  #there is no reference trinuc for non snps
+	if not isinstance(refTri, basestring): return None #if the ref tri is not a string we better return none
+	if len(refTri) < 3: return None # if the ref tri is less than length 3 (at the end of an exon), we cant do anything
 	refTri = str(refTri) #just make sure the ref tri is a string here to avoid funny business
 	refAlleleFromReftri = refTri[1]
 	alt = altAllele
@@ -326,12 +328,12 @@ def get_adjusted_signature_column_names(mode = 'Stratton'):
 		sys.exit()
 
 #returns the dominant signautre for a row of a df expressed as a dict with the specified signatures under consideration
-def get_dominant_signature(rowAsDict, cols=None):
+def get_dominant_signature(rowAsDict, cols=None, prefix='mean'):
 	if cols == None:
 		cols = get_adjusted_signature_column_names()
 	tupList = []
 	for key, value in rowAsDict.items():
-		if 'mean' in key: tupList.append((key, value))
+		if prefix in key: tupList.append((key, value))
 	sortedSigs = sorted(tupList, key = lambda tup: tup[1], reverse=True)
 	return sortedSigs[0][0]
 
@@ -398,11 +400,13 @@ def main():
 	parser.add_argument('--outputFilename', help='output filename', default=None)
 	parser.add_argument('--mutationalSignaturesScriptPath', help='path to the mutational signatures script', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures')
 	parser.add_argument('--trinucOnly', help='mode for whether we just generate the triunc only file', default=False)
-	parser.add_argument('--mode', help='mode for whether we just generate the triunc only file', default='triuncOnly')
+	parser.add_argument('--mode', help='mode for whether we just generate the triunc only file', default='trinucOnly')
 	parser.add_argument('--spectrumFilePath', help='path to the spectrum file', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt')  #signaturesFilePath = '/ifs/work/taylorlab/friedman/myUtils/newSignatures.txt'
 
 
 	args = parser.parse_args()
+
+	print args.mode
 
 	trinucOnly = False
 	if args.mode == 'trinucOnly':
