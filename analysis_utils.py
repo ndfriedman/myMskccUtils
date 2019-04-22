@@ -65,10 +65,11 @@ def skip_diag_strided(A):
 
 #a function that takes a numpy array and returns all pairwise differences (excludes the diagonal)
 def calculate_all_pairwise_differences(arr):
-    diffMatrix = arr[:,np.newaxis] - arr #get the differences in magnitudes between elements of a matrix
-    diffMatrixNoDiag = skip_diag_strided(diffMatrix) #get rid of the diagnoal of the matrix (the differences in ccf between the exact same variant which will be 0)
-    diffs = [i for i in diffMatrixNoDiag.flatten() if i >= 0] #ignore negative values so we dont double count entries
-    return diffs  
+	if len(arr) == 0: return [] #return an empty list for something where there are issues
+	diffMatrix = arr[:,np.newaxis] - arr #get the differences in magnitudes between elements of a matrix
+	diffMatrixNoDiag = skip_diag_strided(diffMatrix) #get rid of the diagnoal of the matrix (the differences in ccf between the exact same variant which will be 0)
+	diffs = [i for i in diffMatrixNoDiag.flatten() if i >= 0] #ignore negative values so we dont double count entries
+	return diffs  
 
 def mean_confidence_interval(data, confidence=0.95):
 	a = 1.0 * np.array(data)
