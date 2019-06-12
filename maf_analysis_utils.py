@@ -5,6 +5,7 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
+import re
 
 from collections import Counter
 sys.path.append('/ifs/work/taylorlab/friedman/')
@@ -14,7 +15,10 @@ if os.getcwd() == '/Users/friedman/Desktop/mnt':
 	pathPrefix = '/Users/friedman/Desktop/mnt'
 
 import imp
-analysis_utils = imp.load_source('analysis_utils', pathPrefix + '/ifs/work/taylorlab/friedman/myUtils/analysis_utils.py')
+#analysis_utils = imp.load_source('analysis_utils', pathPrefix + '/ifs/work/taylorlab/friedman/myUtils/analysis_utils.py')
+#ignore the path prefix babadookery
+analysis_utils = imp.load_source('analysis_utils', '/Users/friedman/Desktop/mnt/ifs/work/taylorlab/friedman/myUtils/analysis_utils.py')
+
 
 #OMNIBUS maf prepping function (adds tid, pid etc)
 def prep_maf(df,
@@ -36,6 +40,16 @@ def prep_maf(df,
 		pass
 	return df
 
+def get_nmut_mb_from_impact_id(case, nmut):
+	captureAreaDict = {'IM3': 896665, 'IM5':1016478, 'IM6':1139322}
+	nmut_Mb = None
+	imVersion = None
+	if 'IM3' in case: imVersion = 'IM3'
+	elif 'IM5' in case: imVersion = 'IM5'
+	elif 'IM6' in case: imVersion = 'IM6'
+	if imVersion != None:
+		nmut_Mb = (1000000.0*nmut)/captureAreaDict[imVersion]
+	return nmut_Mb
 
 ####little utilities
 def fix_mll_genes(maf):
@@ -46,7 +60,47 @@ def fix_mll_genes(maf):
         else x)   
     return maf
 
+##quick command line based tools for counting information in a maf
+def count_n_oncogenic_muts_in_maf(mafPath):
+	cmd = 'grep -n Oncogenic ' + mafPath + ' | wc -l'
+	process = os.popen(cmd)
+	return int(process.read())
 
+#quick way to get nmuts for maf
+def get_per_case_mut_info(nmutDfPath = '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/nmutInfo_impact_filtered.tsv'):
+    df = pd.read_table(nmutDfPath)
+    return dict(zip(df['Tumor_Sample_Barcode'], df['Nmut']))
+
+####CNA MAF ANALYSIS UTILITIES
+def mark_cases_with_flat_genomes(maf):
+	flatGenomeSet = set()
+	for case in set(maf['Tumor_Sample_Barcode']):
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+
+		if caseMaf[caseMaf['ccf_Mcopies'].notnull()].shape[0] == 0: #CATCH ALL THE PURITY=NA flat genomes cases
+			flatGenomeSet.add(case)
+	maf['FlatGenome'] = maf['Tumor_Sample_Barcode'].apply(lambda x: True if x in flatGenomeSet else False)
+	return maf
+
+def mark_cases_with_median_vaf_of_case(maf):
+	vafMapping = dict()
+	for case in set(maf['Tumor_Sample_Barcode']):
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+		medianVaf = np.nanmedian(caseMaf['t_var_freq'])
+		vafMapping[case] = medianVaf
+	maf['medianVaf'] = maf['Tumor_Sample_Barcode'].apply(lambda x: vafMapping[x])
+	return maf
+
+#BEST most efficient way to quickly count up the number of times a value occurs
+def get_n_oncogenic_muts_per_case_dict(maf):
+	oncoKbOncogenicAnnotations = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
+	oncoMaf = maf[maf['oncogenic'].isin(oncoKbOncogenicAnnotations)]
+	return dict(oncoMaf['Tumor_Sample_Barcode'].value_counts())
+
+#returns the fraction of mutations in a cohort that are indels
+def get_indel_frac_for_cohort(maf):
+	indelClassificationNames = set(['Frame_Shift_Del', 'Frame_Shift_Ins', 'In_Frame_Del', 'In_Frame_Ins'])
+	return 1.0*maf[maf['Variant_Classification'].isin(indelClassificationNames)].shape[0]/maf.shape[0]
 
 #a utility function designed to add information about hotspots (which hotspot, what 4nuc etc) to a df with one entry per case
 def add_hotspot_maf_info_to_df(df, mafDf,
@@ -64,6 +118,7 @@ def add_hotspot_maf_info_to_df(df, mafDf,
 	df['quadNuc'] = df[idCol].apply(lambda x: hotspotFourNucDict[x] if x in hotspotFourNucDict else None)
 	return df
 
+###############ADDING COLUMNS
 
 #a utility function that we use to add a column to a dataframe that summarizes True/False for the column X which is true if its hotspot/oncogenic/truncating
 def add_mut_effect_summary_col(mafDf):
@@ -77,37 +132,80 @@ def add_mut_effect_summary_col(mafDf):
 		axis=1)
 	return mafDf
 
+#UTILITIES FOR ASSIGING mutations to the signature that most likely caused them
+#creates the reference four nucleotide context for signatures
 
-def summarize_per_case_mutation_info_for_mafs(mafDf):
-	oncoKbOncogenicAnnotations = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
-	listOfDicts = []
-	cases = set(mafDf['Tumor_Sample_Barcode'])
-	cntr = 0
-	for case in cases:
-		if cntr%20==0: #slow function so I print progress
-			print cntr, len(cases)
-		localDict = {}
-		caseDf = mafDf[mafDf['Tumor_Sample_Barcode'] == case]
-		nOncogenicMuts = caseDf[caseDf['oncogenic'].isin(oncoKbOncogenicAnnotations)].shape[0]
-		nHotspotMuts = caseDf[caseDf['is-a-hotspot'] == 'Y'].shape[0]
-		nActivatingMutations = caseDf[(caseDf['is-a-hotspot'] == 'Y') | (caseDf['oncogenic'].isin(oncoKbOncogenicAnnotations))].shape[0]
-		nMut = caseDf.shape[0]
-		snpsOnly = caseDf[caseDf['Variant_Type'] == 'SNP']
-		nSnps = snpsOnly.shape[0]
-		nOncogenicSnps = snpsOnly[snpsOnly['oncogenic'].isin(oncoKbOncogenicAnnotations)].shape[0]
+#df['quadNuc'] = df.apply(lambda row: maf_analysis_utils.create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'], row['Variant_Type']), axis=1)
+def create_reference_four_nuc(refTri, refAllele, altAllele, variantType):
+	#properly invert when needed
+	def invert_allele_and_ref_tri(altAllele):
+		nucleotideDict = {'A': 'T', 'G': 'C', 'C':'G', 'T':'A'}
+		return nucleotideDict[altAllele]
 
-		localDict['Tumor_Sample_Barcode'] = case
-		localDict['Nmut'] = nMut
-		localDict['NSnps'] = nSnps
-		localDict['nOncogenicSnps'] = nOncogenicSnps
-		localDict['nOncogenicMuts'] = nOncogenicMuts
-		localDict['nHotspotMuts'] = nHotspotMuts
-		localDict['nActivatingMutations'] = nActivatingMutations
+	if variantType != 'SNP': return None  #there is no reference trinuc for non snps
+	if not isinstance(refTri, basestring): return None #if the ref tri is not a string we better return none
+	if len(refTri) < 3: return None # if the ref tri is less than length 3 (at the end of an exon), we cant do anything
+	refTri = str(refTri) #just make sure the ref tri is a string here to avoid funny business
+	refAlleleFromReftri = refTri[1]
+	alt = altAllele
+	if refAlleleFromReftri != refAllele:
+		alt = invert_allele_and_ref_tri(altAllele)
+	quadNuc = refTri[:2] + alt + refTri[2]
+	return quadNuc
 
-		listOfDicts.append(localDict)
-		cntr += 1
 
-	return pd.DataFrame(listOfDicts)
+
+#Marks mutations in cases with multiple mutations as shared
+def mark_private_vs_shared_mutations(maf):
+
+	def combineDicts(bigDict, littleDict): 
+		for key, value in littleDict.items():
+			bigDict[key] = value
+		return bigDict
+
+	maf['varUuid'] = maf.apply(lambda row: 
+		str(row['Start_Position']) + '_' + row['Hugo_Symbol'] + '_' + row['Tumor_Seq_Allele2'] + '_' + row['pid'], axis=1)
+	d = dict()
+	for pid in set(maf['pid']):
+
+		patientMaf = maf[maf['pid'] == pid]
+		
+		nMutsDict = dict(patientMaf['varUuid'].value_counts())
+
+		d = combineDicts(d, nMutsDict)
+	maf['isSharedMut'] = maf['varUuid'].apply(lambda x: True if d[x] == 2 else False)
+	return maf
+
+#marks private mutations by how many alterations already happened in the gene
+#NOT a fully fleshed out function
+
+def mark_mutations_by_gene_mut_type(maf, implicationDictStrong, implicationDictWeak):
+
+	maf['geneMutType'] = maf.apply(lambda row:
+                                            'strongly_recurrent' if row['Hugo_Symbol'] in implicationDictStrong[row['cancer_type']]
+                                             else 'weakly_recurrent' if row['Hugo_Symbol'] in implicationDictWeak[row['cancer_type']]
+    										 else 'not_recurrent', axis=1
+      )
+	return maf
+
+def mark_mutations_by_nth_alteration_in_gene(maf, oncogenicOnly = True):
+	for case in set(maf['Tumor_Sample_Barcode']):
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+
+		print case
+
+		beforeMaf = caseMaf[caseMaf['isSharedMut'] == True]
+		beforeMafOncogenic = beforeMaf[beforeMaf['oncogenic'].notnull()]
+		afterMaf = caseMaf[caseMaf['isSharedMut'] == False]
+		afterMafOncogenic = afterMaf[afterMaf['oncogenic'].notnull()]
+
+		for gene in set(afterMafOncogenic['Hugo_Symbol']):
+			oncAfterGeneMaf = afterMafOncogenic[afterMafOncogenic['Hugo_Symbol'] == gene]
+			oncBeforeGeneMaf = beforeMafOncogenic[beforeMafOncogenic['Hugo_Symbol'] == gene]
+			print gene, oncBeforeGeneMaf.shape[0], oncAfterGeneMaf.shape[0] 
+		print '________________'
+	return 0
+
 
 #a function that enumerates all activating mutations in a gene across a cohort maf
 def enumerate_activating_muts_across_cohort(gene, mafDf = None):
@@ -223,6 +321,63 @@ def asses_snp_burden_across_cohort(maf):
 
 	return pd.DataFrame(listOfDicts)
 
+def summarize_nmut_info_across_cohort(maf):
+	listOfDicts = []
+	nmutDict = dict(maf['Tumor_Sample_Barcode'].value_counts())
+	cntr = 0
+	for case, nmut in nmutDict.items():
+		cntr += 1
+		if cntr%1000 == 0:
+			print cntr
+
+		nmut_Mb = get_nmut_mb_from_impact_id(case, nmut)
+		listOfDicts.append({
+				'Nmut_Mb': nmut_Mb,
+				'Nmut': nmut,
+				'Tumor_Sample_Barcode': case
+			})
+	return pd.DataFrame(listOfDicts)
+
+#script to create a NMUT/MB estimate based on a filtered impact maf
+def calculate_nmut_mb_info_from_filtered_maf(maf, write=True):
+	exonicVarClass = set(["Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins", "Missense_Mutation", "Nonsense_Mutation", "Splice_Site", "Translation_Start_Site"])
+	maf = maf[maf['Variant_Classification'].isin(exonicVarClass)]
+	
+	listOfDicts = []
+	cntr = 0
+	captureAreaDict = {'IM3': 896665, 'IM5':1016478, 'IM6':1139322}
+	for case in set(maf['Tumor_Sample_Barcode']):
+		cntr += 1
+		if cntr%1000 == 0: print cntr
+		nmut_Mb = get_nmut_mb_from_impact_id(case)
+		listOfDicts.append({'Tumor_Sample_Barcode': case, 'Nmut_Mb': nmut_Mb})
+	df = pd.DataFrame(listOfDicts)
+
+	#ADD CANCER TYPE INFO AND PROPERLY RENAME IT
+	renameMapping = {'Pleural Mesothelioma, Epithelioid Type': 'Mesothelioma','Breast Invasive Ductal Carcinoma': 'Breast Cancer','Bladder Urothelial Carcinoma': 'Bladder Cancer','Upper Tract Urothelial Carcinoma': 'Bladder Cancer',
+	'Colon Adenocarcinoma': 'Colorectal Cancer', 'Glioblastoma Multiforme': 'Glioma','Adenocarcinoma of the Gastroesophageal Junction': 'Esophagogastric Cancer','Pancreatic Neuroendocrine Tumor': 'Pancreatic Cancer',
+	'Endometrial Carcinoma': 'Endometrial Cancer','Stomach Adenocarcinoma': 'Esophagogastric Cancer','Rectal Adenocarcinoma': 'Colorectal Cancer','High-Grade Serous Ovarian Cancer': 'Ovarian Cancer','Breast Invasive Lobular Carcinoma': 'Breast Cancer',
+	'Oligodendroglioma': 'Glioma','Serous Ovarian Cancer': 'Ovarian Cancer','Prostate Adenocarcinoma': 'Prostate Cancer','Breast Invasive Carcinoma, NOS': 'Breast Cancer','Esophageal Adenocarcinoma': 'Esophagogastric Cancer',
+	'Invasive Breast Carcinoma': 'Breast Cancer','Pancreatic Adenocarcinoma': 'Pancreatic Cancer','Uterine Endometrioid Carcinoma': 'Endometrial Cancer','Colorectal Adenocarcinoma': 'Colorectal Cancer','Mucinous Adenocarcinoma of the Colon and Rectum': 'Colorectal Cancer'
+	}
+
+	df['pid'] = df['Tumor_Sample_Barcode'].apply(lambda x: x[:9])
+	cDict = analysis_utils.get_cancer_type_information(cancerTypeDfPath = analysis_utils.path_fix('/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_clinical_sample.txt'))
+	df['cancer_type'] = df['pid'].apply(lambda x: cDict[x] if x in cDict else None)
+	df['cancer_type'] = df['cancer_type'].apply(lambda x: renameMapping[x] if x in renameMapping else x)
+
+	if write:
+		df.to_csv(analysis_utils.path_fix('/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/tmbInfo.tsv'), index=False, sep='\t')
+
+	return df
+
+
+#a utility that tells us the number of mutations per case in the filtered maf
+def generate_filtered_mut_per_case_dict(filteredMafDir = '/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_mutations_extended.txt'):
+	df = pd.read_table(filteredMafDir)
+	print df
+	return 0
+
 #a utility function that enumerates the top N genes with the most oncogenic mutations in distinct samples
 #also enumerates fraction of cases with muts in each case
 #returns three things:
@@ -230,11 +385,16 @@ def asses_snp_burden_across_cohort(maf):
 #ii. A dict with gene name: cohort ranking
 #iii. A dict mapping gene to fraction of cohort with an oncogenic mutation in that case
 def enumerate_top_n_oncogenic_mutated_genes_across_cohort(cohortMaf, n=None):
+
+	#Add the pid column if its not already there
+	if 'pid' not in cohortMaf.columns.values:
+		cohortMaf['pid'] = cohortMaf['Tumor_Sample_Barcode'].apply(lambda x: x[:9])
+
 	oncoKbOncogenicAnnotations = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
 	oncogenicMutations = cohortMaf[cohortMaf['oncogenic'].isin(oncoKbOncogenicAnnotations)]
 	oncogenicMutations['patientGeneMutated'] = oncogenicMutations.apply(lambda row: row['pid'] + '_' + row['Hugo_Symbol'], axis=1)
 	oncogenicMutationsSansPatientDuplicates = oncogenicMutations.drop_duplicates(subset=['patientGeneMutated']) #NOTE this analysis isnt perfect as it treats independent primaries as genetically related
-	
+
 	nPatients = len(set(cohortMaf['pid']))	
 	occurenceCounter = None
 	if n!= None:
@@ -253,6 +413,86 @@ def enumerate_top_n_oncogenic_mutated_genes_across_cohort(cohortMaf, n=None):
 		cntr += 1
 
 	return occurenceCounter, rankingDict, fractionalDict
+
+#MAKEs a summary of oncogenic mutation info for a cohort for each case, namely the cases mutation burden, n related and unrelated mutations, n second hit mutations, and n second hit mutations in related genes
+
+#We use two thresholds for ???
+THRESH_FOR_RECURRENT_MUTATION_BIG = 0.1
+THRESH_FOR_RECURRENT_MUTATION_SMALL = 0.01
+def summarize_oncogenic_mutation_info(maf, pathPrefix):
+	#ENUMERATE specific cancer types we will look at
+	maf = maf[maf['oncogenic'].notnull()] #currently only look at oncogenic mutations
+
+	cTypes = set([re.sub('_', ' ', x.strip('.tsv')) for x in os.listdir(pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds')])
+	cTypes.remove('Cancer of Unknown Primary')
+	print 'making dict'
+
+	#temp remove
+	#cTypes = set(['Endometrial Cancer'])
+	maf = maf[maf['cancer_type'].isin(cTypes)]
+
+	cancerTypeImplicationDictBig = create_dictionary_mapping_genes_to_cancer_types_with_implication(maf, pathPrefix, cancerTypes=cTypes, t=THRESH_FOR_RECURRENT_MUTATION_BIG)
+	#make a dictionary of 'semi-related genes'
+	cancerTypeImplicationDictSmall = create_dictionary_mapping_genes_to_cancer_types_with_implication(maf, pathPrefix, cancerTypes=cTypes, t=THRESH_FOR_RECURRENT_MUTATION_SMALL) 
+	for key, value in cancerTypeImplicationDictBig.items():
+		curCTypeGenes = cancerTypeImplicationDictSmall[key]
+		cancerTypeImplicationDictSmall[key] = curCTypeGenes - value
+
+
+	nMutDict = get_per_case_mut_info(nmutDfPath = pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/nmutInfo_impact_filtered.tsv')
+
+	#print cancerTypeImplicationDict
+	maf['stronglyRelated'] = maf.apply(lambda row: None if row['cancer_type'] not in cTypes 
+		else True if row['Hugo_Symbol'] in cancerTypeImplicationDictBig[row['cancer_type']] 
+		else False, axis=1)
+	maf['weaklyRelated'] = maf.apply(lambda row: None if row['cancer_type'] not in cTypes 
+		else True if row['Hugo_Symbol'] in cancerTypeImplicationDictSmall[row['cancer_type']] 
+		else False, axis=1)
+
+	maf['geneAndCase'] = maf.apply(lambda row: row['Hugo_Symbol'] + '_' + row['Tumor_Sample_Barcode'], axis=1) #used to let us know how many times something is mutated
+	mafNoMultiples = maf.drop_duplicates(subset=['geneAndCase'])
+
+	nMutStronglyRelatedDict = dict(maf[maf['stronglyRelated'] == True]['Tumor_Sample_Barcode'].value_counts())
+	nMutWeaklyRelatedDict = dict(maf[maf['weaklyRelated'] == True]['Tumor_Sample_Barcode'].value_counts())
+	nMutUnrelatedDict = dict(maf[(maf['stronglyRelated'] == False) & (maf['weaklyRelated'] == False )]['Tumor_Sample_Barcode'].value_counts())
+	nStronglyRelatedGenesAlteredDict = dict(mafNoMultiples[mafNoMultiples['stronglyRelated'] == True]['Tumor_Sample_Barcode'].value_counts())
+	nWeaklyRelatedGenesAlteredDict = dict(mafNoMultiples[mafNoMultiples['weaklyRelated'] == True]['Tumor_Sample_Barcode'].value_counts())
+
+	#LONG OVER THE TOP WAY TO DO THINGS TO SET UP THE DF TODO MAKE THIS CODE BETTER
+	listOfDicts = []
+	for case in set(maf['Tumor_Sample_Barcode']):
+		
+		nmut = 0
+		if case in nMutDict: nmut = nMutDict[case]
+		
+		nMutStronglyRelated = 0
+		if case in nMutStronglyRelatedDict: nMutStronglyRelated = nMutStronglyRelatedDict[case]
+
+		nMutWeaklyRelated = 0
+		if case in nMutWeaklyRelatedDict: nMutWeaklyRelated = nMutWeaklyRelatedDict[case]
+
+		nMutUnrelated = 0
+		if case in nMutUnrelatedDict: nMutUnrelated = nMutUnrelatedDict[case]
+
+		nStronglyRelatedGenesAltered = 0
+		if case in nStronglyRelatedGenesAlteredDict: nStronglyRelatedGenesAltered = nStronglyRelatedGenesAlteredDict[case]
+
+		nWeaklyRelatedGenesAltered = 0
+		if case in nWeaklyRelatedGenesAlteredDict: nWeaklyRelatedGenesAltered = nWeaklyRelatedGenesAlteredDict[case]
+
+		#TODO add cancer type
+		listOfDicts.append({
+			'Tumor_Sample_Barcode': case, 'Nmut': nmut, 
+			'nMutStronglyRelated': nMutStronglyRelated, 'nMutWeaklyRelated': nMutWeaklyRelated, 'nMutOncogenic': nMutStronglyRelated + nMutWeaklyRelated + nMutUnrelated,
+			'nMutUnrelated': nMutUnrelated, 
+			'nStronglyRelatedGenesAltered': nStronglyRelatedGenesAltered, 'nWeaklyRelatedGenesAltered': nWeaklyRelatedGenesAltered,
+			'nStronglyRelatedMultipleMutations': nMutStronglyRelated - nStronglyRelatedGenesAltered, 'nWeaklyRelatedMultipleMutations': nMutWeaklyRelated - nWeaklyRelatedGenesAltered
+		})
+
+	df = pd.DataFrame(listOfDicts)
+	df['nStronglyRelatedSingleAlterations'] = df.apply(lambda row: row['nMutStronglyRelated'] - row['nStronglyRelatedMultipleMutations'], axis=1)
+	df['nWeaklyRelatedSingleAlterations'] = df.apply(lambda row: row['nMutWeaklyRelated'] - row['nWeaklyRelatedMultipleMutations'], axis=1)
+	return df
 
 ######################LOH/CNA analysis tools
 
@@ -306,6 +546,52 @@ def enumerate_recurrently_mutated_tumor_supressors_and_oncogenes(cohortMaf, thre
                 recurrentOncogenes.append(key) 
     return set(recurrentTumorSupressors), set(recurrentOncogenes)
 
+#creates a dictionary that maps cancer types to the implication of mutations in that cancer type
+def create_dictionary_mapping_genes_to_cancer_types_with_implication(maf, pathPrefix='', cancerTypes=None, t=0.05):
+	
+	d = {}
+	for cType in cancerTypes:
+		print cType
+		cTypeAllIds = analysis_utils.get_ids_by_hypermutant_status(hypermutantIdDir=pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType=cType, hypermutantStatus = 'all')
+		cTypeAllMuts = maf[maf['Tumor_Sample_Barcode'].isin(cTypeAllIds)]
+		cTypeNormalIds = analysis_utils.get_ids_by_hypermutant_status(hypermutantIdDir=pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType=cType, hypermutantStatus = 'Normal')
+		cTypeNormalMuts = maf[maf['Tumor_Sample_Barcode'].isin(cTypeNormalIds)]
+		tumorS, oncoG = enumerate_recurrently_mutated_tumor_supressors_and_oncogenes(cTypeNormalMuts, thresh=t)
+		recurrentGenes = tumorS | oncoG
+		d[cType] = recurrentGenes
+	return d
+
+#An extended version of this dictionary having more than one result
+#ALERT
+def create_dictionary_mapping_genes_to_cancer_types_with_implication_multiple_thresh(maf, pathPrefix='', cancerTypes=None, t1=0.01, t2 = 0.1):
+	
+	d = {}
+	for cType in cancerTypes:
+		print cType
+		cTypeAllIds = analysis_utils.get_ids_by_hypermutant_status(hypermutantIdDir=pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType=cType, hypermutantStatus = 'all')
+		cTypeAllMuts = maf[maf['Tumor_Sample_Barcode'].isin(cTypeAllIds)]
+		cTypeNormalIds = analysis_utils.get_ids_by_hypermutant_status(hypermutantIdDir=pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType=cType, hypermutantStatus = 'Normal')
+		cTypeNormalMuts = maf[maf['Tumor_Sample_Barcode'].isin(cTypeNormalIds)]
+		tumorS, oncoG = enumerate_recurrently_mutated_tumor_supressors_and_oncogenes(cTypeNormalMuts, thresh=t)
+		recurrentGenes = tumorS | oncoG
+		d[cType] = recurrentGenes
+	return d
+
+
+
+def annotate_whether_indel_is_at_msi_site(msiMafPath = '/ifs/work/taylorlab/bielskic/MSI/b37_dmp_microsatellites.vep.IMPACT468.maf'):
+	df = pd.read_table(msiMafPath)
+	return 0
+
+
+def mark_genes_in_maf_that_have_multiplets(maf, oncogenicOnly = True):
+	oncogenicMutColNames = set(['Likely Oncogenic', 'Oncogenic', 'Predicted Oncogenic'])
+	if oncogenicOnly: #if we only do the 
+		maf = maf[maf['oncogenic'].isin(oncogenicMutColNames)]
+
+    #only mark IMPACT genes
+	genes = set(['ABL1', 'ACVR1', 'AGO2', 'AKT1', 'AKT2', 'AKT3', 'ALK', 'ALOX12B', 'ANKRD11', 'APC', 'AR', 'ARAF', 'ARID1A', 'ARID1B', 'ARID2', 'ARID5B', 'ASXL1', 'ASXL2', 'ATM', 'ATR', 'ATRX', 'AURKA', 'AURKB', 'AXIN1', 'AXIN2', 'AXL', 'B2M', 'BABAM1', 'BAP1', 'BARD1', 'BBC3', 'BCL10', 'BCL2', 'BCL2L1', 'BCL2L11', 'BCL6', 'BCOR', 'BIRC3', 'BLM', 'BMPR1A', 'BRAF', 'BRCA1', 'BRCA2', 'BRD4', 'BRIP1', 'BTK', 'CALR', 'CARD11', 'CARM1', 'CASP8', 'CBFB', 'CBL', 'CCND1', 'CCND2', 'CCND3', 'CCNE1', 'CD274', 'CD276', 'CD79A', 'CD79B', 'CDC42', 'CDC73', 'CDH1', 'CDK12', 'CDK4', 'CDK6', 'CDK8', 'CDKN1A', 'CDKN1B', 'CDKN2A', 'CDKN2B', 'CDKN2C', 'CEBPA', 'CENPA', 'CHEK1', 'CHEK2', 'CIC', 'CREBBP', 'CRKL', 'CRLF2', 'CSDE1', 'CSF1R', 'CSF3R', 'CTCF', 'CTLA4', 'CTNNB1', 'CUL3', 'CXCR4', 'CYLD', 'CYSLTR2', 'DAXX', 'DCUN1D1', 'DDR2', 'DICER1', 'DIS3', 'DNAJB1', 'DNMT1', 'DNMT3A', 'DNMT3B', 'DOT1L', 'DROSHA', 'DUSP4', 'E2F3', 'EED', 'EGFL7', 'EGFR', 'EIF1AX', 'EIF4A2', 'EIF4E', 'ELF3', 'EP300', 'EPAS1', 'EPCAM', 'EPHA3', 'EPHA5', 'EPHA7', 'EPHB1', 'ERBB2', 'ERBB3', 'ERBB4', 'ERCC2', 'ERCC3', 'ERCC4', 'ERCC5', 'ERF', 'ERG', 'ERRFI1', 'ESR1', 'ETV1', 'ETV6', 'EZH1', 'EZH2', 'FAM123B', 'FAM175A', 'FAM46C', 'FAM58A', 'FANCA', 'FANCC', 'FAT1', 'FBXW7', 'FGF19', 'FGF3', 'FGF4', 'FGFR1', 'FGFR2', 'FGFR3', 'FGFR4', 'FH', 'FLCN', 'FLT1', 'FLT3', 'FLT4', 'FOXA1', 'FOXL2', 'FOXO1', 'FOXP1', 'FUBP1', 'FYN', 'GATA1', 'GATA2', 'GATA3', 'GLI1', 'GNA11', 'GNAQ', 'GNAS', 'GPS2', 'GREM1', 'GRIN2A', 'GSK3B', 'H3F3A', 'H3F3B', 'H3F3C', 'HGF', 'HIST1H1C', 'HIST1H2BD', 'HIST1H3A', 'HIST1H3B', 'HIST1H3C', 'HIST1H3D', 'HIST1H3E', 'HIST1H3F', 'HIST1H3G', 'HIST1H3H', 'HIST1H3I', 'HIST1H3J', 'HIST2H3C', 'HIST2H3D', 'HIST3H3', 'HLA-A', 'HLA-B', 'HNF1A', 'HOXB13', 'HRAS', 'ICOSLG', 'ID3', 'IDH1', 'IDH2', 'IFNGR1', 'IGF1', 'IGF1R', 'IGF2', 'IKBKE', 'IKZF1', 'IL10', 'IL7R', 'INHA', 'INHBA', 'INPP4A', 'INPP4B', 'INPPL1', 'INSR', 'IRF4', 'IRS1', 'IRS2', 'JAK1', 'JAK2', 'JAK3', 'JUN', 'KDM5A', 'KDM5C', 'KDM6A', 'KDR', 'KEAP1', 'KIT', 'KLF4', 'KMT2B', 'KMT5A', 'KNSTRN', 'KRAS', 'LATS1', 'LATS2', 'LMO1', 'LYN', 'MALT1', 'MAP2K1', 'MAP2K2', 'MAP2K4', 'MAP3K1', 'MAP3K13', 'MAP3K14', 'MAPK1', 'MAPK3', 'MAPKAP1', 'MAX', 'MCL1', 'MDC1', 'MDM2', 'MDM4', 'MED12', 'MEF2B', 'MEN1', 'MET', 'MGA', 'MITF', 'MLH1', 'KMT2A', 'KMT2B', 'KMT2C', 'MPL', 'MRE11A', 'MSH2', 'MSH3', 'MSH6', 'MSI1', 'MSI2', 'MST1', 'MST1R', 'MTOR', 'MUTYH', 'MYC', 'MYCL1', 'MYCN', 'MYD88', 'MYOD1', 'NBN', 'NCOA3', 'NCOR1', 'NEGR1', 'NF1', 'NF2', 'NFE2L2', 'NFKBIA', 'NKX2-1', 'NKX3-1', 'NOTCH1', 'NOTCH2', 'NOTCH3', 'NOTCH4', 'NPM1', 'NRAS', 'NSD1', 'NTHL1', 'NTRK1', 'NTRK2', 'NTRK3', 'NUF2', 'NUP93', 'PAK1', 'PAK7', 'PALB2', 'PARK2', 'PARP1', 'PAX5', 'PBRM1', 'PDCD1', 'PDCD1LG2', 'PDGFRA', 'PDGFRB', 'PDPK1', 'PGR', 'PHOX2B', 'PIK3C2G', 'PIK3C3', 'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PIK3R1', 'PIK3R2', 'PIK3R3', 'PIM1', 'PLCG2', 'PLK2', 'PMAIP1', 'PMS1', 'PMS2', 'PNRC1', 'POLD1', 'POLE', 'PPARG', 'PPM1D', 'PPP2R1A', 'PPP4R2', 'PPP6C', 'PRDM1', 'PRDM14', 'PREX2', 'PRKAR1A', 'PRKCI', 'PRKD1', 'PTCH1', 'PTEN', 'PTP4A1', 'PTPN11', 'PTPRD', 'PTPRS', 'PTPRT', 'RAB35', 'RAC1', 'RAC2', 'RAD21', 'RAD50', 'RAD51', 'RAD51C', 'RAD51L1', 'RAD51L3', 'RAD52', 'RAD54L', 'RAF1', 'RARA', 'RASA1', 'RB1', 'RBM10', 'RECQL', 'RECQL4', 'REL', 'RET', 'RFWD2', 'RHEB', 'RHOA', 'RICTOR', 'RIT1', 'RNF43', 'ROS1', 'RPS6KA4', 'RPS6KB2', 'RPTOR', 'RRAGC', 'RRAS', 'RRAS2', 'RTEL1', 'RUNX1', 'RXRA', 'RYBP', 'SDHA', 'SDHAF2', 'SDHB', 'SDHC', 'SDHD', 'SESN1', 'SESN2', 'SESN3', 'SETD2', 'SF3B1', 'SH2B3', 'SH2D1A', 'SHOC2', 'SHQ1', 'SLX4', 'SMAD2', 'SMAD3', 'SMAD4', 'SMARCA4', 'SMARCB1', 'SMARCD1', 'SMO', 'SMYD3', 'SOCS1', 'SOS1', 'SOX17', 'SOX2', 'SOX9', 'SPEN', 'SPOP', 'SPRED1', 'SRC', 'SRSF2', 'STAG2', 'STAT3', 'STAT5A', 'STAT5B', 'STK11', 'STK19', 'STK40', 'SUFU', 'SUZ12', 'SYK', 'TAP1', 'TAP2', 'TBX3', 'TCEB1', 'TCF3', 'TCF7L2', 'TEK', 'TERT', 'TET1', 'TET2', 'TGFBR1', 'TGFBR2', 'TMEM127', 'TMPRSS2', 'TNFAIP3', 'TNFRSF14', 'TOP1', 'TP53', 'TP53BP1', 'TP63', 'TRAF2', 'TRAF7', 'TSC1', 'TSC2', 'TSHR', 'U2AF1', 'UPF1', 'VEGFA', 'VHL', 'VTCN1', 'WHSC1', 'WHSC1L1', 'WT1', 'WWTR1', 'XIAP', 'XPO1', 'XRCC2', 'YAP1', 'YES1', 'ZFHX3', 'ZRSR2'])
+    #TODO COME UP WITH A REAL AND EFFECTIVE WAY TO MARK DOUBLETD
 
 def main():
 
