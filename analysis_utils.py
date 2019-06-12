@@ -5,6 +5,8 @@ import argparse
 import os
 import pandas as pd
 import numpy as np
+import re
+import math
 
 import scipy.stats
 
@@ -12,7 +14,22 @@ from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
 
 
+def path_fix(basePath):
+	pathPrefix = ''
+	if os.getcwd() == '/Users/friedman/Desktop/mnt': pathPrefix = '/Users/friedman/Desktop/mnt'
+	elif os.getcwd() == '/Users/friedman/Desktop/WORK/hypermutationProjectJupyterScripts': pathPrefix = '/Users/friedman/Desktop/WORK/hypermutationProjectJupyterScripts'
+	return pathPrefix + basePath
 
+#loads in a big file with a progress bar that gives us a realistic estimate of how long its gonna take
+def load_in_df_with_progress(filePath, nLinesFile, cSize=10000):
+	chunks = []
+	cntr = 0.0
+	for chunk in pd.read_table(filePath, chunksize=cSize):
+		cntr += 1
+		print round(cntr * cSize/nLinesFile, 4)*100 ,'percent done'
+		chunks.append(chunk)
+	print 'performing big concat then returning'
+	return pd.concat(chunks)
 
 ########USEFUL code area
 
@@ -23,8 +40,29 @@ cDict = analysis_utils.get_cancer_type_information(cancerTypeDfPath = pathPrefix
 impactSigs['cancer_type'] = impactSigs['pid'].apply(lambda x: cDict[x] if x in cDict else None)""" 
 
 
+def get_ids_by_hypermutant_status(hypermutantIdDir='/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType='', hypermutantStatus = 'Hypermutated'):
+	cancerTypeAdj = re.sub(' ', '_', cancerType)
+	path = os.path.join(hypermutantIdDir, cancerTypeAdj + '.tsv')
+	df = pd.read_table(path)
+	if hypermutantStatus == 'all':
+		return set(df['Tumor_Sample_Barcode'])
+	else:
+		return set(df[df['hypermutantClassification'] == hypermutantStatus]['Tumor_Sample_Barcode'])
 
 
+def map_cases_to_msi_sensor_class(df, msiSensorInfo='/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_clinical_sample.txt'):
+	dfMSI = pd.read_table(msiSensorInfo, skiprows=[1,2,3])
+	msiClassDict = dict(zip(dfMSI['#Sample Identifier'], dfMSI['MSI Type']))
+	df['caseMsiClass'] = df['Tumor_Sample_Barcode'].apply(lambda x: msiClassDict[x] if x in msiClassDict else None)
+	return df
+
+#utility function to quickly tell us the chromosomes of all the IMPACT genes
+def map_impact_genes_to_chromosome(impactRegionsFile = '/ifs/work/taylorlab/friedman/myAdjustedDataFiles/genelist.with_aa.interval_list'):
+	df = pd.read_table(impactRegionsFile, header=None)
+	df = df.rename(columns = {0: 'Chromosome', 1:'pos1', 2:'pos2', 3:'strand', 4:'geneTranscript'}) #rename the columns of the dataframe because it is ill formatted
+	df['Gene'] = df['geneTranscript'].apply(lambda x: x.split(':')[0])
+	dfReduced = df.drop_duplicates(subset=['Gene']) #drop all the duplicate rows
+	return dict(zip(dfReduced['Gene'], dfReduced['Chromosome']))
 
 #KAPLAN MEIER ANALYSIS
 
@@ -72,6 +110,7 @@ def calculate_all_pairwise_differences(arr):
 	return diffs  
 
 def mean_confidence_interval(data, confidence=0.95):
+	data = [i for i in data if not math.isnan(i)] #remove nas
 	a = 1.0 * np.array(data)
 	n = len(a)
 	m, se = np.mean(a), scipy.stats.sem(a)
@@ -107,18 +146,18 @@ def get_age_information(ageInformationPath = '/ifs/work/taylorlab/friedman/msk-i
 	d = dict(zip(ageDf['PATIENT_ID'], ageDf['AGE']))
 	return d
 
-def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/dmp/mskimpact/data_clinical_sample.txt', mode='pid'):
+def get_cancer_type_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_clinical_sample.txt', mode='pid'):
 	cancerTypeDf = pd.read_table(cancerTypeDfPath)
 	if mode == 'pid':
 		cancerTypeDf['#Sample Identifier'] = cancerTypeDf['#Sample Identifier'].apply(lambda x: x[:9])
 	d = dict(zip(cancerTypeDf['#Sample Identifier'], cancerTypeDf['Cancer Type']))
 	return d
 
-def get_cancer_type_detailed_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/dmp/mskimpact/data_clinical_sample.txt', mode='pid'):
+def get_cancer_type_detailed_information(cancerTypeDfPath = '/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_clinical_sample.txt', mode='pid'):
 	cancerTypeDf = pd.read_table(cancerTypeDfPath)
 	if mode == 'pid':
-		cancerTypeDf['#Sample Identifier'] = cancerTypeDf['#Sample Identifier'].apply(lambda x: x[:9])
-	d = dict(zip(cancerTypeDf['#Sample Identifier'], cancerTypeDf['Cancer Type Detailed']))
+		cancerTypeDf['#Patient Identifier'] = cancerTypeDf['#Patient Identifier'].apply(lambda x: x[:9])
+	d = dict(zip(cancerTypeDf['#Patient Identifier'], cancerTypeDf['Cancer Type Detailed']))
 	return d
 
 #TODO MAKE THIS MORE SUSTAINABLE
@@ -182,7 +221,6 @@ def do_pearson_correlation_one_df(df, col1, col2):
 	c2 = np.asarray(df[col2])
 	#print c1, c2
 	return scipy.stats.pearsonr(c1,c2)
-
 
 #util function to pretty print tumor sample barcodes for cbioportal
 def print_for_cbio_portal(s):
