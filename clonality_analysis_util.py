@@ -14,7 +14,7 @@ if os.getcwd() == '/Users/friedman/Desktop/mnt':
 	pathPrefix = '/Users/friedman/Desktop/mnt'
 
 import imp
-analysis_utils = imp.load_source('analysis_utils', pathPrefix + '/ifs/work/taylorlab/friedman/myUtils/analysis_utils.py')
+analysis_utils = imp.load_source('analysis_utils', '/Users/friedman/Desktop/mnt/ifs/work/taylorlab/friedman/myUtils/analysis_utils.py')
 
 def create_facets_dict_key(row):
 	return row['Tumor_Sample_Barcode'] + '_' + row['idCol']
@@ -46,12 +46,6 @@ def analyze_clonality_across_muts_in_pole_cases(mutsDf, facetsDict, writeDir = '
 				histogram_util.plot_simple_normed_histogram(data, case, writeDir, figureTitle)
 			print '_________'
 
-def mark_cases_with_flat_genomes():
-	flatGenome = False
-	if caseMaf[caseMaf['ccf_Mcopies'].notnull()].shape[0] == 0: #CATCH ALL THE PURITY=NA flat genomes cases
-		flatGenome = True
-	
-
 
 #a heuristic for testing if a mutation is a double hit of the same location
 #assumes that a mutation that occurs in a balanced region with 
@@ -61,6 +55,8 @@ def is_mut_double_hit(row,
 	flatGenome, #BOOLEAN to tell us if facets said the case's genome is flat
  doubleFactor=2): #factor by which a mutations vaf needs to be bigger than the median to be considered double.  
 
+	if row['Chromosome'] == 'X': return False #DONT CALL A MUTATION ON X AS DOUBLE BY MISTAKE
+
 	if (math.isnan(row['ccf_Mcopies']) or math.isnan(row['ccf_1copy'])) and not flatGenome: #Null values for ccf only matter if the genome isnt flat
 		return False
 	else:
@@ -69,6 +65,31 @@ def is_mut_double_hit(row,
 		else:
 			if row['t_var_freq'] >= doubleFactor*medianVaf:
 				return True
+
+#MARK mutations that occur at a balanced region of the genome 
+#use this for simplified analyses of balanced regions
+def mark_mutation_is_balanced(row):
+	if row['Chromosome'] == 'X': return False #we dont include X mutations cause its complicated
+	
+	#if flatGenome: return True #cases with purity = NA, flat genomes are considered to be flat everywhere
+	#if (math.isnan(row['ccf_Mcopies']) or math.isnan(row['ccf_1copy'])) #dont analyze regions where Mcopies or 1copy are null (flat genome cases have already been called true)
+	#	return False
+
+	if row['tcn'] - row['lcn'] != row['lcn']: #this means the region isnt balanced
+		return False
+	else: #this means it is
+		return True
+
+def mark_maf_with_ccf_for_flat_genomes(maf, gene):
+	
+	maf = maf[maf['oncogenic'].notnull()]
+	print set(maf['oncogenic'])
+
+	for case in set(maf['Tumor_Sample_Barcode']):
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+		caseMafPTEN = caseMaf[caseMaf['Hugo_Symbol'] == gene]
+		print caseMafPTEN['ccf_Mcopies']
+
 
 def calculate_delta_vaf_across_mutation_pairs(maf, #MAF to analyze
 	doDoubleHitCorrection=True, #does a correction to count all cases where nmut copies = 2 as two mutations at the same spot
@@ -114,11 +135,14 @@ def calculate_delta_vaf_across_mutation_pairs(maf, #MAF to analyze
 				else:
 
 					if geneMaf[geneMaf['isDouble'] == True].shape[0] > 0:
-						if gene in dDeltaVaf:
-							dDeltaVaf[gene][0] = dDeltaVaf[gene][0] + [0] #append a zero for double mutations (note that this does not take into account that the double mutations may not occur at the same time!!?>)
-							dDeltaVaf[gene][1] = dDeltaVaf[gene][1] + [(0.5*max(list(geneMaf['t_var_freq'])))/meanVaf] #take max vaf, divide it by two and compare the ratio to median vaf
-						else:
-							dDeltaVaf[gene] = [[0],[(0.5*max(list(geneMaf['t_var_freq'])))/meanVaf]] #make it a list of lists
+						pass
+						#ALERT DO WE INCLUDE DOUBLE MUTS AT THE SAME LOCUS OR NOT???
+						#diff = max(list(geneMaf['t_var_freq'])))
+						#if gene in dDeltaVaf:
+						#	dDeltaVaf[gene][0] = dDeltaVaf[gene][0] + [0] #append a zero for double mutations (note that this does not take into account that the double mutations may not occur at the same time!!?>)
+						#	dDeltaVaf[gene][1] = dDeltaVaf[gene][1] + [(0.5*max(list(geneMaf['t_var_freq'])))/meanVaf] #take max vaf, divide it by two and compare the ratio to median vaf
+						#else:
+						#	dDeltaVaf[gene] = [[0],[(0.5*max(list(geneMaf['t_var_freq'])))/meanVaf]] #make it a list of lists
 					###TODO add code so we dont do shit like when PTEN IS LOF'D already
 					else:
 						if geneMaf.shape[0] > 1:
@@ -134,6 +158,8 @@ def calculate_delta_vaf_across_mutation_pairs(maf, #MAF to analyze
 								dDeltaVaf[gene] = [[min(differencesNormed)], [maxVafToMedianVafRatio]] # we only take the closest pair if there is more than one pair
 	return dDeltaVaf
 
+def enumerate_biggest_and_second_biggest_vaf_for_mutation():
+	return 0
 
 def main():
 
