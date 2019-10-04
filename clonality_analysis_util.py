@@ -50,8 +50,9 @@ def analyze_clonality_across_muts_in_pole_cases(mutsDf, facetsDict, writeDir = '
 #a heuristic for testing if a mutation is a double hit of the same location
 #assumes that a mutation that occurs in a balanced region with 
 #TODO make sure that we dont miscall variants in a small founder clone as doubles
+
+#TODO CHANGE THIS TO CALL DOUBLE MUTATIONS BASED ON SAMPLE PURITY
 def is_mut_double_hit(row, 
-	medianVaf, #medianVaf of all mutations in the case
 	flatGenome, #BOOLEAN to tell us if facets said the case's genome is flat
  doubleFactor=2): #factor by which a mutations vaf needs to be bigger than the median to be considered double.  
 
@@ -63,7 +64,7 @@ def is_mut_double_hit(row,
 		if not flatGenome and row['tcn'] - row['lcn'] != row['lcn']: #if the region isnt balanced we wont call it a double hit
 			return False
 		else:
-			if row['t_var_freq'] >= doubleFactor*medianVaf:
+			if row['t_var_freq'] >= 1.75*row['medianClonalVaf']:
 				return True
 
 #MARK mutations that occur at a balanced region of the genome 
@@ -157,6 +158,24 @@ def calculate_delta_vaf_across_mutation_pairs(maf, #MAF to analyze
 							else:
 								dDeltaVaf[gene] = [[min(differencesNormed)], [maxVafToMedianVafRatio]] # we only take the closest pair if there is more than one pair
 	return dDeltaVaf
+
+
+#TODO add functionality to do percentile for only the biggest mutation as well
+def mark_mutations_by_vaf_mut_percentile(maf):
+
+	#only do this at balanced regions of the genome
+	maf['isBalanced'] = maf.apply(lambda row: mark_mutation_is_balanced(row), axis=1)
+	maf = maf[maf['isBalanced'] == True]
+
+	print maf.shape
+
+	caseDict = {}
+	for case in set(maf['Tumor_Sample_Barcode']):
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+		percentiles = dict(zip(caseMaf['varUuid'], caseMaf['t_var_freq'].rank(pct=True)))
+		caseDict[case] = percentiles
+	maf['caseVafPercentileRank'] = maf.apply(lambda row: caseDict[row['Tumor_Sample_Barcode']][row['varUuid']], axis=1)		
+	return maf
 
 def enumerate_biggest_and_second_biggest_vaf_for_mutation():
 	return 0
