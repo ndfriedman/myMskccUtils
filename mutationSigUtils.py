@@ -11,6 +11,8 @@ import re
 #run code to get mutational signatures
 def run_mutational_signatures_code(scriptDir, outputFilePath, sMaf, signaturesFilePath, triuncOnly=False, tMaf=None):
 	def run_triunc_command(scriptDir, sMaf, tMaf):
+		#temp
+		scriptDir = '/home/friedman/friedman/mutation-signatures'
 		triuncScriptPath = os.path.join(scriptDir, 'make_trinuc_maf.py')
 		cmd = 'python {sPath} {sourceMafPath} {TargetMafPath}'.format(sPath = triuncScriptPath, sourceMafPath = sMaf, TargetMafPath = tMaf)
 		print 'executing Triunc command: ', cmd
@@ -139,6 +141,23 @@ def create_reference_four_nuc(refTri, refAllele, altAllele, variantType):
 		alt = invert_allele_and_ref_tri(altAllele)
 	quadNuc = refTri[:2] + alt + refTri[2]
 	return quadNuc
+
+#Creates a string of the form XX(X>Y)ZZ that is strand specific
+def create_strand_specific_pentanucleotide_change(refPenta, refAllele, altAllele, variantType):
+
+	complementDict = {'C': 'G', 'G': 'C', 'T': 'A', 'A': 'T'}
+
+	if variantType != 'SNP': return None
+	if not isinstance(refPenta, basestring): return None
+	if len(refPenta) < 5: return None
+
+	if refAllele != refPenta[2]:
+		altAllele = complementDict[altAllele]
+	#if refAllele != refPenta[2]: #this means the ref penta is corrected
+		#refPenta = refPenta[::-1] #reverse the reference pentanucleotide so that it matches
+		#refPenta = ''.join([complementDict[x] for x in refPenta])#and complement it
+	return refPenta[:2] + '(' + refPenta[2] + '>' + altAllele + ')' + refPenta[3:]
+
 
 #assigns the signature that was most likely to create a mutation
 def assign_most_likely_mutation(spectrumDict, row, 
@@ -328,7 +347,9 @@ def get_adjusted_signature_column_names(mode = 'Stratton'):
 		sys.exit()
 
 #returns the dominant signautre for a row of a df expressed as a dict with the specified signatures under consideration
-def get_dominant_signature(rowAsDict, cols=None, prefix='mean'):
+def get_dominant_signature(rowAsDict, cols=None, prefix='mean', notEnoughMuts= True):
+	if notEnoughMuts == True:
+		if rowAsDict['Nmut'] < 10: return 'insufficientMutBurden'
 	if cols == None:
 		cols = get_adjusted_signature_column_names()
 	tupList = []
@@ -392,12 +413,47 @@ def find_second_most_common_signature(row, primarySig, returnMode,
         else:
             return sortedItems[0][1]
 
+def count_quad_nuc_sprectra_from_maf(maf):
+
+	def Merge(dict1, dict2):  #UTILITY function to merge dicitonaries
+		z = dict2.copy()
+		z.update(dict1)
+		return z
+
+	listOfDataframes = []
+
+	if ['Ref_Tri'] not in maf.columns.values:
+		print 'error, the maf we use needs to have a column called ref tri'
+		return
+	allBases = ['A', 'C', 'G', 'T']
+	changes = ['CA', 'CG', 'CT', 'TA', 'TC', 'TG'] #format: 'CA' means a change from C>A
+	allQuadNucs = [firstBase + change + lastBase for firstBase in allBases for change in changes for lastBase in allBases] #enumerate all 96 quadnucs for signatures
+	maf['quadNuc'] = maf.apply(lambda row: create_reference_four_nuc(row['Ref_Tri'], row['Reference_Allele'], row['Tumor_Seq_Allele2'], row['Variant_Type']), axis=1)
+	allCases = set(maf['Tumor_Sample_Barcode'])
+	for quadNuc in allQuadNucs:
+		qMaf = maf[maf['quadNuc'] == quadNuc]
+
+		#Convluted (but hopefully somewhat more efficient) code to count the number of times a trinucleotide occurs in each case
+		valueCountsDict = dict(qMaf['Tumor_Sample_Barcode'].value_counts()) #cases where the trincleotide occurs
+		zeroBarcodes = allCases - set(valueCountsDict.keys())
+		casesWhereQuadNucDoesNotOccur = {key:value for (key, value) in [(barcode, 0) for barcode in zeroBarcodes]}#create another dictionary to mark other cases as 0
+		allCasesDictionary = Merge(valueCountsDict, casesWhereQuadNucDoesNotOccur)
+		df = pd.DataFrame(allCasesDictionary.items())
+		df = df.rename(columns={0:'Tumor_Sample_Barcode', 1:quadNuc}) #fix the column names of this df we have constructed
+		listOfDataframes.append(df) #store all these columns so we can merge them later
+
+	df = listOfDataframes[0]
+	for df_ in listOfDataframes[1:]:
+		df = df.merge(df_, on='Tumor_Sample_Barcode')
+	return df
+
 def main():
 
 	parser = argparse.ArgumentParser(description='Noahs script!')
 	parser.add_argument('--inputMaf', help='maf to run signatures/triunc on', default='/ifs/work/taylorlab/friedman/clinicalData/msk-impact/msk-impact/data_mutations_extended.txt')
 	parser.add_argument('--outputDir', help='output directory', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles')
 	parser.add_argument('--outputFilename', help='output filename', default=None)
+	#CHANGE TO MUT SIGNATURES 2019 path!!!!
 	parser.add_argument('--mutationalSignaturesScriptPath', help='path to the mutational signatures script', default='/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures')
 	parser.add_argument('--trinucOnly', help='mode for whether we just generate the triunc only file', default=False)
 	parser.add_argument('--mode', help='mode for whether we just generate the triunc only file', default='trinucOnly')
