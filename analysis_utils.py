@@ -13,6 +13,14 @@ import scipy.stats
 from lifelines import KaplanMeierFitter
 from lifelines.statistics import logrank_test
 
+pathPrefix = ''
+if os.getcwd() == '/Users/friedman/Desktop/mnt':
+	pathPrefix = '/Users/friedman/Desktop/mnt'
+
+import imp
+#maf_analysis_utils = imp.load_source('maf_analysis_utils', pathPrefix + '/ifs/work/taylorlab/friedman/myUtils/maf_analysis_utils.py')
+#import maf_analysis_utils
+
 
 def path_fix(basePath):
 	pathPrefix = ''
@@ -40,6 +48,8 @@ cDict = analysis_utils.get_cancer_type_information(cancerTypeDfPath = pathPrefix
 impactSigs['cancer_type'] = impactSigs['pid'].apply(lambda x: cDict[x] if x in cDict else None)""" 
 
 
+#hypermuation project utilities
+
 def get_ids_by_hypermutant_status(hypermutantIdDir='/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds', cancerType='', hypermutantStatus = 'Hypermutated'):
 	cancerTypeAdj = re.sub(' ', '_', cancerType)
 	path = os.path.join(hypermutantIdDir, cancerTypeAdj + '.tsv')
@@ -49,6 +59,22 @@ def get_ids_by_hypermutant_status(hypermutantIdDir='/ifs/work/taylorlab/friedman
 	else:
 		return set(df[df['hypermutantClassification'] == hypermutantStatus]['Tumor_Sample_Barcode'])
 
+
+def enumerate_related_unrelated_genes_for_hypermutation_analysis(allImpactMuts, cTypes=['Endometrial Cancer', 'Colorectal Cancer', 'Glioma'], pathPrefix='~/Desktop/mnt/'):
+	genesImplicatedInCancerTypes= maf_analysis_utils.create_dictionary_mapping_genes_to_cancer_types_with_implication(allImpactMuts, pathPrefix=pathPrefix, cancerTypes=cTypes, t=0.04)
+	hypermutationInitiatingGenes = set(['MSH6', 'MLH1', 'MSH2', 'PMS2', 'POLE'])
+	relatedGenesDict = {}
+	for cancerType, genes in genesImplicatedInCancerTypes.items():
+	    if cancerType == 'Colorectal Cancer' or 'Endometrial Cancer':
+	        genes = genes | hypermutationInitiatingGenes
+	        relatedGenesDict[cancerType] = genes
+	    else:
+	        relatedGenesDict[cancerType] = genes
+	return relatedGenesDict
+
+
+
+############
 
 def map_cases_to_msi_sensor_class(df, msiSensorInfo='/ifs/work/taylorlab/friedman/mskImpactAsOfMarch2019/dmp/mskimpact/data_clinical_sample.txt'):
 	dfMSI = pd.read_table(msiSensorInfo, skiprows=[1,2,3])
@@ -119,6 +145,7 @@ def mean_confidence_interval(data, confidence=0.95):
 
 #TODO ---put this in analysis utils
 def normalize_counter(cntrObj, mode='Round', nDigitsRound=2):
+	cntrObj = cntrObj.copy() #operate on a copy of the counter
 	total = sum(cntrObj.values(), 0.0)
 	for key in cntrObj:
 		cntrObj[key] /= total
