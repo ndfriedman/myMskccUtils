@@ -36,8 +36,7 @@ def normalize_counter(cntrObj, mode='Round', nDigitsRound=2):
 ###################################SAMPLING AREA
 
 #note this could be done a lot faster as a matrix multiplication; todo implement it that way?
-def get_quadnuc_fracs_given_decomposition(caseDecomposition, spectraPath = '/ifs/work/taylorlab/friedman/noahFirstProject/signature_sig_copy/mutation-signatures/Stratton_signatures30.txt'):
-	spectraD = mutationSigUtils.convert_spectrum_file_to_dict_of_dicts(spectrumFile=spectraPath)
+def get_quadnuc_fracs_given_decomposition(caseDecomposition, spectraD):
 	quadNucs = spectraD['Signature.1'].keys()
 	quadNucD = {} #initialize the fractions for each quadnuc
 	for quadNuc in quadNucs:
@@ -233,6 +232,89 @@ def calculate_pan_impact_likelihood_of_oncogenic_mmr_indel(repeatRegionInfo = '/
 
 ####################################
 
+#OTHER WAY TO SET UP DATA
+"""
+quadNucsNmutDict = {}
+for qn in set(dfMuts['quadNuc']):
+    nQnMuts = sum(dfMuts[dfMuts['quadNuc'] == qn]['nNonSilent'])
+    quadNucsNmutDict[qn] = nQnMuts
+
+dfMuts['hotspotChance'] = dfMuts.apply(lambda row: 1.0*row['nHotspot']/quadNucsNmutDict[row['quadNuc']], axis=1)
+dfMuts['oncogenicChance'] = dfMuts.apply(lambda row: 1.0*row['nOncogenic']/quadNucsNmutDict[row['quadNuc']], axis=1)
+dfMuts['truncatingChance'] = dfMuts.apply(lambda row: 1.0*row['nTruncating']/quadNucsNmutDict[row['quadNuc']], axis=1)"""
+
+
+#functions to get quad nuc based oncogenic fractions
+
+#THIS function counts the number of oncogenic, hotspot etc mutations at each quad nuc which is a critixal tool for downstream quantifying the expected oncogenic mutation burdne
+#USAGE: df = mutation_modeling_util.quantify_quadnuc_mut_type_susceptibility_per_mutation(allMutsPossible, mode='perGene')
+#where allMutsPossible = analysis_utils.load_in_df_with_progress(filePath = pathPrefix + '/ifs/work/taylorlab/friedman/myAdjustedDataFiles/allMutsContextSummary.tsv', nLinesFile=4243342) 
+
+def quantify_quadnuc_mut_type_susceptibility_per_mutation(simMafData, #a maf of all possible mutations in impact
+	#Default is to only do this calculation with the IMPACT 341 panel
+	genes= set(['ABL1', 'AKT1', 'AKT2', 'AKT3', 'ALK', 'ALOX12B', 'APC', 'AR', 'ARAF', 'ARID1A', 'ARID1B', 'ARID2', 'ARID5B', 'ASXL1', 'ASXL2', 'ATM', 'ATR', 'ATRX', 'AURKA', 'AURKB', 'AXIN1', 'AXIN2', 'AXL', 'B2M', 'BAP1', 'BARD1', 'BBC3', 'BCL2', 'BCL2L1', 'BCL2L11', 'BCL6', 'BCOR', 'BLM', 'BMPR1A', 'BRAF', 'BRCA1', 'BRCA2', 'BRD4', 'BRIP1', 'BTK', 'CARD11', 'CASP8', 'CBFB', 'CBL', 'CCND1', 'CCND2', 'CCND3', 'CCNE1', 'CD274', 'CD276', 'CD79B', 'CDC73', 'CDH1', 'CDK12', 'CDK4', 'CDK6', 'CDK8', 'CDKN1A', 'CDKN1B', 'CDKN2A', 'CDKN2B', 'CDKN2C', 'CHEK1', 'CHEK2', 'CIC', 'CREBBP', 'CRKL', 'CRLF2', 'CSF1R', 'CTCF', 'CTLA4', 'CTNNB1', 'CUL3', 'DAXX', 'DCUN1D1', 'DDR2', 'DICER1', 'DIS3', 'DNMT1', 'DNMT3A', 'DNMT3B', 'DOT1L', 'E2F3', 'EED', 'EGFL7', 'EGFR', 'EIF1AX', 'EP300', 'EPCAM', 'EPHA3', 'EPHA5', 'EPHB1', 'ERBB2', 'ERBB3', 'ERBB4', 'ERCC2', 'ERCC3', 'ERCC4', 'ERCC5', 'ERG', 'ESR1', 'ETV1', 'ETV6', 'EZH2', 'FAM123B', 'FAM175A', 'FAM46C', 'FANCA', 'FANCC', 'FAT1', 'FBXW7', 'FGF19', 'FGF3', 'FGF4', 'FGFR1', 'FGFR2', 'FGFR3', 'FGFR4', 'FH', 'FLCN', 'FLT1', 'FLT3', 'FLT4', 'FOXA1', 'FOXL2', 'FOXP1', 'FUBP1', 'GATA1', 'GATA2', 'GATA3', 'GNA11', 'GNAQ', 'GNAS', 'GREM1', 'GRIN2A', 'GSK3B', 'H3F3C', 'HGF', 'HIST1H1C', 'HIST1H2BD', 'HIST1H3B', 'HNF1A', 'HRAS', 'ICOSLG', 'IDH1', 'IDH2', 'IFNGR1', 'IGF1', 'IGF1R', 'IGF2', 'IKBKE', 'IKZF1', 'IL10', 'IL7R', 'INPP4A', 'INPP4B', 'INSR', 'IRF4', 'IRS1', 'IRS2', 'JAK1', 'JAK2', 'JAK3', 'JUN', 'KDM5A', 'KDM5C', 'KDM6A', 'KDR', 'KEAP1', 'KIT', 'KLF4', 'KRAS', 'LATS1', 'LATS2', 'LMO1', 'MAP2K1', 'MAP2K2', 'MAP2K4', 'MAP3K1', 'MAP3K13', 'MAPK1', 'MAX', 'MCL1', 'MDC1', 'MDM2', 'MDM4', 'MED12', 'MEF2B', 'MEN1', 'MET', 'MITF', 'MLH1', 'MLL', 'MLL2', 'MLL3', 'MPL', 'MRE11A', 'MSH2', 'MSH6', 'MTOR', 'MUTYH', 'MYC', 'MYCL1', 'MYCN', 'MYD88', 'MYOD1', 'NBN', 'NCOR1', 'NF1', 'NF2', 'NFE2L2', 'NKX2-1', 'NKX3-1', 'NOTCH1', 'NOTCH2', 'NOTCH3', 'NOTCH4', 'NPM1', 'NRAS', 'NSD1', 'NTRK1', 'NTRK2', 'NTRK3', 'PAK1', 'PAK7', 'PALB2', 'PARK2', 'PARP1', 'PAX5', 'PBRM1', 'PDCD1', 'PDGFRA', 'PDGFRB', 'PDPK1', 'PHOX2B', 'PIK3C2G', 'PIK3C3', 'PIK3CA', 'PIK3CB', 'PIK3CD', 'PIK3CG', 'PIK3R1', 'PIK3R2', 'PIK3R3', 'PIM1', 'PLK2', 'PMAIP1', 'PMS1', 'PMS2', 'PNRC1', 'POLE', 'PPP2R1A', 'PRDM1', 'PRKAR1A', 'PTCH1', 'PTEN', 'PTPN11', 'PTPRD', 'PTPRS', 'PTPRT', 'RAC1', 'RAD50', 'RAD51', 'RAD51B', 'RAD51C', 'RAD51D', 'RAD52', 'RAD54L', 'RAF1', 'RARA', 'RASA1', 'RB1', 'RBM10', 'RECQL4', 'REL', 'RET', 'RFWD2', 'RHOA', 'RICTOR', 'RIT1', 'RNF43', 'ROS1', 'RPS6KA4', 'RPS6KB2', 'RPTOR', 'RUNX1', 'RYBP', 'SDHA', 'SDHAF2', 'SDHB', 'SDHC', 'SDHD', 'SETD2', 'SF3B1', 'SH2D1A', 'SHQ1', 'SMAD2', 'SMAD3', 'SMAD4', 'SMARCA4', 'SMARCB1', 'SMARCD1', 'SMO', 'SOCS1', 'SOX17', 'SOX2', 'SOX9', 'SPEN', 'SPOP', 'SRC', 'STAG2', 'STK11', 'STK40', 'SUFU', 'SUZ12', 'SYK', 'TBX3', 'TERT', 'TET1', 'TET2', 'TGFBR1', 'TGFBR2', 'TMEM127', 'TMPRSS2', 'TNFAIP3', 'TNFRSF14', 'TOP1', 'TP53', 'TP63', 'TRAF7', 'TSC1', 'TSC2', 'TSHR', 'U2AF1', 'VHL', 'VTCN1', 'WT1', 'XIAP', 'XPO1', 'YAP1', 
+		'YES1']),
+	mode='perQuadNuc'
+):
+	allBases = ['A', 'C', 'G', 'T']
+	changes = ['CA', 'CG', 'CT', 'TA', 'TC', 'TG'] #format: 'CA' means a change from C>A
+	allQuadNucs = [firstBase + change + lastBase for firstBase in allBases for change in changes for lastBase in allBases] #enumerate all 96 quadnucs for signatures
+
+	d = {}
+
+	#mafSelect = simMafData[simMafData['Hugo_Symbol'].isin(genes)]
+	mafSelect = simMafData
+
+	genes = set(mafSelect['Hugo_Symbol'])
+
+	#SILENT is synonymous mutations and intron variants
+	#NOTE I HABVENT included intron splice region variants, UTRS, etc but realistically they represent <1% of all mutations so whatever decision I make isnt biasing things much
+	silentConsequences = ['synonymous_variant', 'splice_region_variant,synonymous_variant','non_coding_transcript_exon_variant', 'intron_variant,non_coding_transcript_variant']
+
+	mafNonSilent = mafSelect[~mafSelect['Consequence'].isin(silentConsequences)]
+	mafOncogeneic = mafSelect[mafSelect['oncogenic'].notnull()]
+	mafHotspot = mafSelect[mafSelect['is-a-hotspot'] == 'Y']
+	mafTruncating = mafSelect[mafSelect['Consequence'] == 'stop_gained']
+
+	listOfDicts = []
+	for quadNuc in allQuadNucs:
+		print quadNuc
+		qMafNonSilent = mafNonSilent[mafNonSilent['quadNuc'] == quadNuc]
+		qMafOncogenic = mafOncogeneic[mafOncogeneic['quadNuc'] == quadNuc]
+		qMafHotspot = mafHotspot[mafHotspot['quadNuc'] == quadNuc]
+		qMafTruncating = mafTruncating[mafTruncating['quadNuc'] == quadNuc]
+		if mode =='perQuadNuc':
+			listOfDicts.append({
+				'quadNuc': quadNuc, 'nNonSilent': qMafNonSilent.shape[0],
+				'nOncogenic': qMafOncogenic.shape[0],
+				'nHotspot ': qMafHotspot.shape[0],
+				'nTruncating': qMafTruncating.shape[0]
+			})
+		elif mode =='perGene':
+			qSilentGeneCounts = dict(qMafNonSilent['Hugo_Symbol'].value_counts())
+			qOncogenicGeneCounts = dict(qMafOncogenic['Hugo_Symbol'].value_counts())
+			qHotspotGeneCounts = dict(qMafHotspot['Hugo_Symbol'].value_counts())
+			qTruncatingCounts = dict(qMafTruncating ['Hugo_Symbol'].value_counts())
+			for gene in genes:
+				silentCount = 0
+				if gene in qSilentGeneCounts: silentCount = qSilentGeneCounts[gene]
+				oncogenicCount = 0
+				if gene in qOncogenicGeneCounts: oncogenicCount = qOncogenicGeneCounts[gene]
+				hotspotCount = 0
+				if gene in qHotspotGeneCounts: hotspotCount = qHotspotGeneCounts[gene]
+				truncatingCount = 0
+				if gene in qTruncatingCounts: truncatingCount = qTruncatingCounts[gene]
+				listOfDicts.append({
+					'quadNuc': quadNuc, 'nNonSilent': silentCount,
+					'nOncogenic': oncogenicCount,
+					'nHotspot ': hotspotCount,
+					'nTruncating': truncatingCount,
+					'gene': gene
+				})
+	return pd.DataFrame(listOfDicts)
+
+######################################
+
 def get_expected_oncogenic_val_given_quadnuc_fractions(quadNucFractions, susceptibilityDict, impactVersion):
 	p = 0
 	print quadNucFractions
@@ -378,8 +460,31 @@ def get_impact_version_given_case_name(caseName):
 	elif 'IM6' in caseName: return 'IMPACT_468'
 	else: return None
 
-#CONSTANTS FOR MUTATION MODELING
+		
 
+def main():
+
+	parser = argparse.ArgumentParser(description='Arg parser for this script')
+	parser.add_argument('--fastaPath', help='Path for full FASTA file', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/b37.fasta')
+	parser.add_argument('--bedFilePath', help='Path of full Bed file', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/genelist.with_aa.interval_list')   
+	parser.add_argument('--scratchBedPath', help='pathForTemporaryBedFile', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/tempScriptFiles/tempBed')
+	
+	args = parser.parse_args()
+	
+	enumerate_all_possible_snps(sequenceDfPath = args.bedFilePath,
+		genes = ['TP53'],
+		scratchBedFilePath = args.scratchBedPath)
+
+if __name__ == '__main__':
+    main()
+
+
+
+#DEPRECATED MUTATION MODELING CODE
+
+
+#CONSTANTS FOR MUTATION MODELING
+"""
 ONCOGENIC_MUTATION_CHANCE_IN_IMPACT = 0.0403674462019 #fraction of all possible non silent mutations in impact that are oncogenic
 IMPACT_INDEL_FRAC = 0.156 #the fraction of mutations that are indels in our cohort
 NON_MSI_INDEL_ONCOGENICITY = 0.3497
@@ -536,27 +641,6 @@ def get_observed_expected_values_for_genes(cases, #the tumor sample barcodes of 
 		})
 
 	df = pd.DataFrame(listOfDicts)
-	return df
-		
-
-def main():
-
-	parser = argparse.ArgumentParser(description='Arg parser for this script')
-	parser.add_argument('--fastaPath', help='Path for full FASTA file', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/b37.fasta')
-	parser.add_argument('--bedFilePath', help='Path of full Bed file', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/genelist.with_aa.interval_list')   
-	parser.add_argument('--scratchBedPath', help='pathForTemporaryBedFile', default='/ifs/work/taylorlab/friedman/myAdjustedDataFiles/tempScriptFiles/tempBed')
-	
-	args = parser.parse_args()
-	
-	enumerate_all_possible_snps(sequenceDfPath = args.bedFilePath,
-		genes = ['TP53'],
-		scratchBedFilePath = args.scratchBedPath)
-
-if __name__ == '__main__':
-    main()
-
-
-
-
+	return df"""
 
 
