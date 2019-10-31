@@ -88,8 +88,70 @@ def mark_maf_with_ccf_for_flat_genomes(maf, gene):
 
 	for case in set(maf['Tumor_Sample_Barcode']):
 		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
-		caseMafPTEN = caseMaf[caseMaf['Hugo_Symbol'] == gene]
-		print caseMafPTEN['ccf_Mcopies']
+		caseMafGene = caseMaf[caseMaf['Hugo_Symbol'] == gene]
+		print caseMafGene['ccf_Mcopies']
+
+
+
+
+#ALTERNATIVE METHOD for ading clonality information to mafs
+#this method probably does not work on non hypermutated cases
+
+
+from sklearn.cluster import MeanShift
+def assign_variants_to_clonal_cluster(vafs, ids):
+    
+    #mark which clusters returned by the clustering are clonal by iterating over clusters by mean vaf 
+    #and returning the clusters once we have at least minClonalMuts mutations accumulated
+    def assign_clonal_subclonal_clusters(clusterDf, minClonalMuts = 10):
+        l = []
+        for cluster in set(df['cluster']):
+            clusterDf = df[df['cluster'] == cluster]
+            l.append((np.nanmean(clusterDf['vaf']), clusterDf.shape[0], cluster))
+        runningMutSum = 0
+        clonalClusters = []
+        for meanVaf, nMut, cluster in sorted(l, reverse=True):
+            clonalClusters.append(cluster)
+            runningMutSum += nMut
+            if runningMutSum >= minClonalMuts:
+                return clonalClusters
+    
+    a = np.array(vafs).reshape(-1, 1)
+    clustering = MeanShift().fit(a)
+    prediction = clustering.predict(a)
+    
+    #We make a dataframe 
+    listOfDicts = []
+    la = list(a)
+    lp = list(prediction)
+    for i in range(0, len(list(a))):
+        listOfDicts.append({
+            'vaf': la[i], 'cluster': lp[i], 'varUuid': ids[i]
+        })
+    df = pd.DataFrame(listOfDicts)
+    
+    minCMut = max(.1*df.shape[0], 10) #at least 10% of mutation in every case are called clonal
+    clonalClusters = assign_clonal_subclonal_clusters(df, minClonalMuts = minCMut)
+    df['clonal'] = df['cluster'].apply(lambda x: True if x in clonalClusters else False)
+    return dict(zip(df['varUuid'], df['clonal']))
+
+def add_clonal_calls_to_maf_based_on_vaf_hypermutators(maf, cases=None):
+	if cases == None: cases = set(maf['Tumor_Sample_Barcode'])
+	maf['isClonal'] = None
+	cntr = 0
+	for case in list(cases):
+		cntr += 1
+		if cntr%5 == 0: 
+			print cntr, len(cases)
+		caseMaf = maf[maf['Tumor_Sample_Barcode'] == case]
+		if caseMaf.shape[0] > 0:
+			caseIds = list(caseMaf['varUuid'])
+			caseVafs = list(caseMaf['t_var_freq'])
+			isClonalDict = assign_variants_to_clonal_cluster(caseVafs, caseIds)
+			maf['isClonal'] = maf.apply(lambda row: 
+					isClonalDict[row['varUuid']] if row['Tumor_Sample_Barcode'] == case and row['varUuid'] in isClonalDict 
+					else row['isClonal'], axis=1)
+	return maf
 
 
 def calculate_delta_vaf_across_mutation_pairs(maf, #MAF to analyze
