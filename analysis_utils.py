@@ -72,6 +72,16 @@ def enumerate_related_unrelated_genes_for_hypermutation_analysis(allImpactMuts, 
 	        relatedGenesDict[cancerType] = genes
 	return relatedGenesDict
 
+#enumerates the ids of all hypermutated cases in impact
+def enumerate_all_hypermutated_cases(pathPrefix = '/Users/friedman/Desktop/mnt'):
+	hypermutatedCases = set([])
+	d = pathPrefix + '/ifs/work/taylorlab/friedman/hypermutationAnalysisProj/projectDataAndConfigFiles/hypermutationStatusIds'
+	for f in os.listdir(d):
+		fPath = os.path.join(d, f)
+		df = pd.read_table(fPath)
+		hypermutants = set(df[df['hypermutantClassification'] == 'Hypermutated']['Tumor_Sample_Barcode'])
+		hypermutatedCases = hypermutants | hypermutatedCases
+	return hypermutatedCases
 
 
 ############
