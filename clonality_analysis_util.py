@@ -239,8 +239,95 @@ def mark_mutations_by_vaf_mut_percentile(maf):
 	maf['caseVafPercentileRank'] = maf.apply(lambda row: caseDict[row['Tumor_Sample_Barcode']][row['varUuid']], axis=1)		
 	return maf
 
-def enumerate_biggest_and_second_biggest_vaf_for_mutation():
-	return 0
+def prepare_maf_for_pyclone(maf):
+
+	#IF THE COPY NUMBER OF NAN THAT MEANS ITS BALANCED
+	maf['tcn'] = maf['tcn'].apply(lambda x: 2 if math.isnan(x) else x)
+	maf['lcn'] = maf['lcn'].apply(lambda x: 1 if math.isnan(x) else x)
+
+	maf['mutation_id'] = maf.apply(lambda row: str(row['Hugo_Symbol']) + '_' + str(row['Chromosome']) + '_' + str(row['Start_Position']), axis=1)
+	maf['ref_counts'] = maf['t_ref_count'].apply(lambda x: int(x))
+	maf['var_counts'] = maf['t_alt_count'].apply(lambda x: int(x))
+	maf['normal_cn'] = 2 #ALERT FIX THIS TO HAVE AN EDGE CASE FOR MEN ON THE X AND Y
+	maf['minor_cn'] = maf['lcn'].apply(lambda x: int(x))
+	maf['major_cn'] = maf.apply(lambda row: int(row['tcn'] - row['lcn']), axis=1)
+
+	return maf[['Tumor_Sample_Barcode', 'mutation_id', 'ref_counts', 'var_counts', 'normal_cn', 'minor_cn', 'major_cn']]
+
+#omnibus function that returns a maf of hypermutated cases and their purities
+def assign_clonality_information_for_hypermutated_cases(mafWithClonalityInfo, facetsWhitelist, facetsBlacklist):
+	idsToInclude = set(mafWithClonalityInfo[mafWithClonalityInfo['tcn'].notnull()]['Tumor_Sample_Barcode']) | facetsWhitelist
+	#ADD clonality info to the facets whitelist cases
+	mafWithClonalityInfo['tcn'] = mafWithClonalityInfo.apply(lambda row: 2 if row['Tumor_Sample_Barcode'] in facetsWhitelist
+		else row['tcn'], axis=1)
+	mafWithClonalityInfo['lcn'] = mafWithClonalityInfo.apply(lambda row: 1 if row['Tumor_Sample_Barcode'] in facetsWhitelist
+		else row['lcn'], axis=1)
+	for case in set(mafWithClonalityInfo['Tumor_Sample_Barcode']) - facetsWhitelist:
+		caseMaf = mafWithClonalityInfo[mafWithClonalityInfo['Tumor_Sample_Barcode'] == case]
+		if caseMaf[caseMaf['tcn'].notnull()].shape[0] == 0:
+			purity = 2*np.nanmedian(caseMaf['t_var_freq'])
+			if purity > .15:
+				print 'facetsInbound ' + str(case)
+		#print caseMaf['tcn']
+	#mafWithClonalityInfo['isBalanced'] = mafWithClonalityInfo.apply(lambda row: True if row['tcn'] - row['lcn'] == row['lcn'] else False, axis=1)
+
+#clonality_analysis_util.create_clonality_whitelist_command(mafWithClonalityInfo, excludeIds=facetsWhitelist | facetsBlacklist)   
+def create_clonality_whitelist_command(mafWithClonalityInfo, purityCutoff = .15, excludeIds=set([])):
+	print 'copy the following to terminal and run'
+	cntr = 0
+	for i in set(mafWithClonalityInfo['Tumor_Sample_Barcode'])-set(mafWithClonalityInfo[mafWithClonalityInfo['tcn'].notnull()]['Tumor_Sample_Barcode'])-excludeIds:
+		caseMaf = mafWithClonalityInfo[mafWithClonalityInfo['Tumor_Sample_Barcode'] == i]
+		purity = 2*np.nanmedian(caseMaf['t_var_freq'])
+		if purity > purityCutoff:
+			print 'facetsInbound ' + i 
+			cntr += 1
+	print cntr 
+
+#returns cases I have manaully facets whitelisted
+#these are completely CNA flat cases with purity=NA
+def get_facets_whitelist():
+	return set(
+		['P-0000069-T01-IM3', 'P-0001248-T01-IM3', 'P-0001703-T01-IM3', 'P-0003767-T01-IM5', 'P-0004255-T01-IM5',
+		'P-0004260-T02-IM5', 'P-0004688-T01-IM5', 'P-0005021-T01-IM5', 'P-0006612-T01-IM5', 'P-0006753-T01-IM5',
+		'P-0009157-T01-IM5', 'P-0010308-T01-IM5', 'P-0010393-T02-IM6', 'P-0010499-T01-IM5', 'P-0010671-T01-IM5',
+		'P-0011345-T01-IM5', 'P-0011385-T01-IM5', 'P-0012397-T01-IM5', 'P-0012402-T01-IM5', 'P-0012445-T01-IM5',
+		'P-0012670-T01-IM5', 'P-0012726-T01-IM5', 'P-0012881-T01-IM5', 'P-0013227-T01-IM5', 'P-0013350-T01-IM5',
+		'P-0013400-T01-IM5', 'P-0013676-T01-IM5', 'P-0014258-T01-IM6', 'P-0014787-T01-IM6', 'P-0015885-T01-IM6',
+		'P-0016773-T01-IM6', 'P-0017675-T01-IM5', 'P-0017839-T01-IM6', 'P-0017925-T01-IM6', 'P-0018005-T01-IM6',
+		'P-0018616-T01-IM6', 'P-0019264-T01-IM6', 'P-0019360-T01-IM6', 'P-0019545-T01-IM6', 'P-0019658-T01-IM6',
+		'P-0019871-T01-IM6', 'P-0021090-T01-IM6', 'P-0025554-T01-IM6', 'P-0026278-T01-IM6', 'P-0026523-T01-IM6',
+		'P-0026962-T01-IM6', 'P-0028144-T01-IM6', 'P-0029690-T01-IM6', 'P-0029778-T01-IM6', 'P-0032113-T01-IM6',
+		'P-0032181-T01-IM6', 'P-0032660-T01-IM6', 'P-0033425-T01-IM6', 'P-0033605-T01-IM6', 'P-0034448-T01-IM6',
+		'P-0035281-T01-IM6', 'P-0036123-T01-IM6', 'P-0036500-T01-IM6', 'P-0036503-T01-IM6', 'P-0036568-T01-IM6',
+		'P-0036860-T01-IM6', 'P-0037288-T01-IM6', 'P-0037582-T01-IM6', 'P-0003524-T01-IM5', 'P-0004051-T01-IM5',
+		'P-0004865-T01-IM5', 'P-0006207-T01-IM5', 'P-0007831-T01-IM5', 'P-0007997-T01-IM5', 'P-0008345-T01-IM5',
+		'P-0010504-T01-IM5', 'P-0010828-T01-IM5', 'P-0011540-T01-IM5', 'P-0013537-T01-IM5', 'P-0014388-T01-IM6',
+		'P-0014780-T01-IM6', 'P-0016023-T01-IM6', 'P-0016099-T01-IM6', 'P-0016801-T01-IM6', 'P-0017713-T01-IM6',
+		'P-0019464-T01-IM6', 'P-0019649-T01-IM6', 'P-0020143-T01-IM6', 'P-0020242-T01-IM6', 'P-0020331-T01-IM6',
+		'P-0021077-T01-IM6', 'P-0021572-T01-IM6', 'P-0023271-T01-IM6', 'P-0023555-T01-IM6', 'P-0024633-T01-IM6',
+		'P-0025073-T01-IM6', 'P-0026456-T01-IM6', 'P-0027438-T01-IM6', 'P-0032496-T01-IM6', 'P-0034308-T01-IM6',
+		'P-0035916-T01-IM6', 'P-0000157-T01-IM3', 'P-0007843-T01-IM5', 'P-0011357-T01-IM5', 'P-0021897-T01-IM6',
+		'P-0020295-T01-IM6', 'P-0008646-T01-IM5', 'P-0010803-T01-IM5', 'P-0011226-T01-IM5', 'P-0013876-T01-IM5',
+		'P-0015288-T01-IM6', 'P-0017681-T01-IM6', 'P-0018781-T01-IM6', 'P-0019437-T01-IM6', 'P-0020151-T01-IM6',
+		'P-0020757-T01-IM6', 'P-0025648-T01-IM6', 'P-0027375-T01-IM6', 'P-0029228-T01-IM6', 'P-0030260-T01-IM6',
+		'P-0032548-T01-IM6', 'P-0032602-T01-IM6', 'P-0033410-T01-IM6', 'P-0035146-T01-IM6', 'P-0035147-T01-IM6',
+		'P-0006170-T01-IM5', 'P-0005197-T01-IM5', 'P-0004379-T01-IM5', 'P-0004379-T02-IM6', 'P-0011570-T01-IM5',
+		'P-0012171-T02-IM6', 'P-0012333-T01-IM5', 'P-0013557-T01-IM5', 'P-0016825-T01-IM6', 'P-0016972-T01-IM6',
+		'P-0017862-T01-IM6', 'P-0018437-T01-IM6', 'P-0020271-T01-IM6', 'P-0024488-T01-IM6', 'P-0025242-T01-IM6',
+		'P-0025662-T01-IM6', 'P-0029972-T01-IM6', 'P-0031195-T01-IM6', 'P-0032548-T01-IM6', 'P-0032602-T01-IM6',
+		'P-0035146-T01-IM6', 'P-0035147-T01-IM6', 'P-0035770-T01-IM6', 'P-0036297-T01-IM6', 'P-0009964-T02-IM5',
+		'P-0013787-T01-IM5', 'P-0015626-T01-IM6', 'P-0024219-T01-IM6', 'P-0032589-T01-IM6', 'P-0037227-T01-IM6',
+		'P-0024733-T01-IM6'
+		])
+
+#get cases I manually reviewed in facets and decided the fit was weird
+def get_facets_blacklist():
+	return set([
+			'P-0001649-T01-IM3', 'P-0004362-T01-IM5', 'P-0006368-T01-IM5', 'P-0009858-T01-IM5', 'P-0010649-T01-IM5',
+			'P-0021600-T01-IM6', 'P-0024184-T01-IM6', 'P-0027380-T01-IM6', 'P-0036284-T01-IM6', 'P-0013462-T01-IM5',
+			'P-0017986-T01-IM6', 'P-0003167-T01-IM5'
+		])
+
 
 def main():
 
